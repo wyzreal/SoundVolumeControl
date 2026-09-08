@@ -1,0 +1,57 @@
+#!/bin/sh
+set -eu
+
+SYSTEM_APP="/Applications/SoundVolumeControl.app"
+SYSTEM_DRIVER="/Library/Audio/Plug-Ins/HAL/SoundVolumeControl.driver"
+BROKER="/Library/PrivilegedHelperTools/org.soundvolumecontrol.broker"
+BROKER_PLIST="/Library/LaunchDaemons/org.soundvolumecontrol.broker.plist"
+POLICY_DIRECTORY="/Library/Application Support/SoundVolumeControl"
+READER_POLICY="$POLICY_DIRECTORY/reader.requirement"
+
+if [ "${3-}" != "/" ]; then
+    echo "SoundVolumeControl can be installed only on the current startup disk." >&2
+    exit 1
+fi
+
+/usr/bin/codesign --verify --strict "$SYSTEM_APP"
+/usr/bin/codesign --verify --strict "$SYSTEM_DRIVER"
+/usr/bin/codesign --verify --strict "$BROKER"
+/usr/sbin/chown root:wheel "$BROKER" "$BROKER_PLIST" "$POLICY_DIRECTORY" "$READER_POLICY"
+/bin/chmod 755 "$BROKER" "$POLICY_DIRECTORY"
+/bin/chmod 644 "$BROKER_PLIST" "$READER_POLICY"
+READER_REQUIREMENT=$(/bin/cat "$READER_POLICY")
+/usr/bin/codesign --verify --strict -R "=$READER_REQUIREMENT" \
+    "$SYSTEM_APP/Contents/Helpers/SoundVolumeForwarder.app"
+/bin/launchctl bootstrap system "$BROKER_PLIST"
+
+# launchd immediately restarts the daemon. Active audio pauses briefly.
+/usr/bin/killall coreaudiod >/dev/null 2>&1 || true
+/bin/sleep 2
+# Remove obsolete public buffers after restarting their old writer. The new
+# anonymous transport creates no globally discoverable shared-memory names.
+"$SYSTEM_APP/Contents/Helpers/SoundVolumeForwarder.app/Contents/MacOS/SoundVolumeForwarder" \
+    --remove-shared-audio
+
+CONSOLE_USER=$(/usr/bin/stat -f '%Su' /dev/console)
+case "$CONSOLE_USER" in
+    ""|root|loginwindow|_mbsetupuser)
+        exit 0
+        ;;
+esac
+
+CONSOLE_UID=$(/usr/bin/id -u "$CONSOLE_USER")
+LOGIN_MARKER="/var/tmp/org.soundvolumecontrol.preserve-login.$CONSOLE_UID"
+APP_EXECUTABLE="$SYSTEM_APP/Contents/MacOS/SoundVolumeControl"
+
+run_as_console_user() {
+    /bin/launchctl asuser "$CONSOLE_UID" \
+        /usr/bin/sudo -u "$CONSOLE_USER" "$@"
+}
+
+if [ -e "$LOGIN_MARKER" ]; then
+    run_as_console_user "$APP_EXECUTABLE" --register-login-item || true
+    /bin/rm -f "$LOGIN_MARKER"
+fi
+run_as_console_user /usr/bin/open "$SYSTEM_APP" || true
+
+exit 0

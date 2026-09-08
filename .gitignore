@@ -1,0 +1,17 @@
+.build/
+dist/
+.DS_Store
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.p12
+*.p8
+*.key
+
+# Root-level clang analyzer reports
+/*.plist

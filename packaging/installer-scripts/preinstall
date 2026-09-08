@@ -1,0 +1,120 @@
+#!/bin/sh
+set -eu
+
+SYSTEM_APP="/Applications/SoundVolumeControl.app"
+LEGACY_LABEL="org.soundvolumecontrol.forwarder"
+BROKER_LABEL="org.soundvolumecontrol.broker"
+SCRIPT_DIRECTORY=$(cd "$(dirname "$0")" && pwd -P)
+
+stop_broker() {
+    if /bin/launchctl print "system/$BROKER_LABEL" >/dev/null 2>&1; then
+        /bin/launchctl bootout "system/$BROKER_LABEL"
+    fi
+}
+
+if [ "${3-}" != "/" ]; then
+    echo "SoundVolumeControl can be installed only on the current startup disk." >&2
+    exit 1
+fi
+
+CONSOLE_USER=$(/usr/bin/stat -f '%Su' /dev/console)
+case "$CONSOLE_USER" in
+    ""|root|loginwindow|_mbsetupuser)
+        "$SCRIPT_DIRECTORY/audio-safety" --refuse-if-default
+        stop_broker
+        exit 0
+        ;;
+esac
+
+CONSOLE_UID=$(/usr/bin/id -u "$CONSOLE_USER")
+CONSOLE_GID=$(/usr/bin/id -g "$CONSOLE_USER")
+CONSOLE_HOME=$(
+    /usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory \
+        | /usr/bin/cut -d ' ' -f 2-
+)
+USER_APP="$CONSOLE_HOME/Applications/SoundVolumeControl.app"
+LEGACY_APP="$CONSOLE_HOME/Library/Application Support/SoundVolumeControl/SoundVolumeForwarder.app"
+LEGACY_PLIST="$CONSOLE_HOME/Library/LaunchAgents/$LEGACY_LABEL.plist"
+SYSTEM_EXECUTABLE="$SYSTEM_APP/Contents/MacOS/SoundVolumeControl"
+USER_EXECUTABLE="$USER_APP/Contents/MacOS/SoundVolumeControl"
+LOGIN_MARKER="/var/tmp/org.soundvolumecontrol.preserve-login.$CONSOLE_UID"
+TRASH_TARGET="$CONSOLE_HOME/.Trash/SoundVolumeControl-pkg-migration-$(date +%Y%m%d-%H%M%S)"
+
+run_as_console_user() {
+    /bin/launchctl asuser "$CONSOLE_UID" \
+        /usr/bin/sudo -u "$CONSOLE_USER" "$@"
+}
+
+/bin/rm -f "$LOGIN_MARKER"
+CURRENT_EXECUTABLE=""
+if [ -x "$SYSTEM_EXECUTABLE" ]; then
+    CURRENT_EXECUTABLE=$SYSTEM_EXECUTABLE
+elif [ -x "$USER_EXECUTABLE" ]; then
+    CURRENT_EXECUTABLE=$USER_EXECUTABLE
+fi
+
+if [ -n "$CURRENT_EXECUTABLE" ]; then
+    LOGIN_STATUS=$(
+        run_as_console_user "$CURRENT_EXECUTABLE" --login-item-status \
+            2>/dev/null || true
+    )
+    case "$LOGIN_STATUS" in
+        1|2)
+            /usr/bin/touch "$LOGIN_MARKER"
+            /bin/chmod 600 "$LOGIN_MARKER"
+            ;;
+    esac
+fi
+if [ -e "$LEGACY_PLIST" ]; then
+    /usr/bin/touch "$LOGIN_MARKER"
+    /bin/chmod 600 "$LOGIN_MARKER"
+fi
+
+if /usr/bin/pgrep -x SoundVolumeControl >/dev/null 2>&1; then
+    run_as_console_user /usr/bin/osascript \
+        -e 'tell application id "org.soundvolumecontrol.app" to quit' \
+        >/dev/null 2>&1 || true
+    ATTEMPT=0
+    while /usr/bin/pgrep -x SoundVolumeControl >/dev/null 2>&1 \
+        && [ "$ATTEMPT" -lt 100 ]; do
+        /bin/sleep 0.1
+        ATTEMPT=$((ATTEMPT + 1))
+    done
+    if /usr/bin/pgrep -x SoundVolumeControl >/dev/null 2>&1; then
+        echo "SoundVolumeControl cancelled Quit because it could not restore a real output." >&2
+        echo "Select a real output in Sound settings, Quit the app, and run this installer again." >&2
+        exit 1
+    fi
+fi
+
+if [ -n "$CURRENT_EXECUTABLE" ]; then
+    run_as_console_user "$CURRENT_EXECUTABLE" --unregister-login-item \
+        >/dev/null 2>&1 || true
+fi
+run_as_console_user "$SCRIPT_DIRECTORY/audio-safety" --refuse-if-default
+/bin/launchctl asuser "$CONSOLE_UID" /bin/launchctl bootout \
+    "gui/$CONSOLE_UID" "$LEGACY_PLIST" >/dev/null 2>&1 || true
+/usr/bin/pkill -TERM -x SoundVolumeForwarder >/dev/null 2>&1 || true
+stop_broker
+
+if [ -e "$SYSTEM_APP" ] || [ -e "$USER_APP" ] \
+    || [ -e "$LEGACY_APP" ] || [ -e "$LEGACY_PLIST" ]; then
+    /bin/mkdir -p "$TRASH_TARGET"
+fi
+if [ -e "$SYSTEM_APP" ]; then
+    /bin/mv "$SYSTEM_APP" "$TRASH_TARGET/SoundVolumeControl-system.app"
+fi
+if [ -e "$USER_APP" ]; then
+    /bin/mv "$USER_APP" "$TRASH_TARGET/SoundVolumeControl-user.app"
+fi
+if [ -e "$LEGACY_APP" ]; then
+    /bin/mv "$LEGACY_APP" "$TRASH_TARGET/SoundVolumeForwarder-legacy.app"
+fi
+if [ -e "$LEGACY_PLIST" ]; then
+    /bin/mv "$LEGACY_PLIST" "$TRASH_TARGET/"
+fi
+if [ -d "$TRASH_TARGET" ]; then
+    /usr/sbin/chown -R "$CONSOLE_UID:$CONSOLE_GID" "$TRASH_TARGET"
+fi
+
+exit 0
