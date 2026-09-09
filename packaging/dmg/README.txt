@@ -1,4 +1,4 @@
-SoundVolumeControl 0.8.1 development candidate
+SoundVolumeControl 0.8.2 development candidate
 ============================================
 
 INSTALL MANUALLY

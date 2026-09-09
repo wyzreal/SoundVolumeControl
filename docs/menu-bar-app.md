@@ -1,8 +1,8 @@
 # Menu-bar app
 
-- App: 0.8.1 (build 13), native arm64 development candidate
-- Embedded helper: 0.8.1 (build 13)
-- Driver: 0.8.1 (build 13)
+- App: 0.8.2 (build 14), native arm64 development candidate
+- Embedded helper: 0.8.2 (build 14)
+- Driver: 0.8.2 (build 14)
 - Small authenticated XPC broker, with no UI or audio processing
 - Minimum macOS: 14.0
 
@@ -26,9 +26,11 @@ slider, EQ control, recorder, permission screen, or advanced audio panel.
 
 ## Default behavior
 
-`forwardingEnabled` is registered as true. On first launch the app starts its
-embedded helper and selects Sound Volume. Users can choose Disable; that choice
-is persisted. Start at Login is separately controlled by
+`forwardingEnabled` is reset to true on every launch, including Start at Login.
+The app starts its embedded helper and selects Sound Volume after readiness.
+Users can choose Disable for the current session; a previous disable or helper
+failure does not prevent the next launch from enabling volume control.
+Start at Login is separately controlled by
 `SMAppService.mainAppService`.
 
 ## Enable sequence

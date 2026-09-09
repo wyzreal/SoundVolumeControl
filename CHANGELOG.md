@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.8.2 — 2026-09-09
+
+- Enable volume control automatically on every launch, including Start at Login.
+  Disable and helper failures now apply only to the current session.
 
 - Added a macOS app icon, bundled with the application.
 - Organized the source tree and consolidated documentation for public development.

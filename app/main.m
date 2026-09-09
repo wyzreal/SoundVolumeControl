@@ -242,6 +242,10 @@ static OSStatus SVCDefaultDeviceChanged(
         @"lastPhysicalDefaultUID": @"",
         @"lastPhysicalSystemUID": @"",
     }];
+    // Disable and helper failures apply only to the current session. Every
+    // launch, including Start at Login, should attempt to enable forwarding.
+    [[NSUserDefaults standardUserDefaults]
+        setBool:YES forKey:@"forwardingEnabled"];
     self.lastPhysicalDefaultUID = [[NSUserDefaults standardUserDefaults]
         stringForKey:@"lastPhysicalDefaultUID"];
     self.lastPhysicalSystemUID = [[NSUserDefaults standardUserDefaults]

@@ -1,4 +1,4 @@
-# Manual acceptance — 0.8.1 candidate
+# Manual acceptance — 0.8.2 candidate
 
 Status: **not run for the current installed candidate**. Do not infer a pass
 from an automated test, an Enabled label, or earlier prototype observations.
@@ -12,7 +12,7 @@ to install software, switch outputs, or generate test sounds without a request.
 - Physical device/model/connection:
 - Normal output and system-sounds output before installation:
 - Physical nominal sample rate (must match 48 kHz):
-- App/helper/driver versions (expected 0.8.1/build 13):
+- App/helper/driver versions (expected 0.8.2/build 14):
 - DMG checksum/source (see [validation coverage](validation.md)):
 
 Keep System Settings > Sound > Output available for recovery. Use ordinary
@@ -35,7 +35,9 @@ diagnosis. Do not uninstall while Sound Volume remains selected.
 - [ ] No duplicate/dry audio, feedback, obvious clipping, clicks, or excessive latency.
 - [ ] Disable restores normal output AND system-sounds output; music continues.
 - [ ] Enable again, then Quit; both outputs are restored and the helper stops.
-- [ ] Reopen; the enabled/disabled preference behaves as documented.
+- [ ] Disable, Quit, then reopen; volume control enables automatically.
+- [ ] With Start at Login on, log out and back in after disabling; volume control
+  enables automatically once the helper is ready.
 
 Record pass/fail and observations for each item. A failure blocks this first
 acceptance gate even if the app shows Enabled or unit tests passed.
