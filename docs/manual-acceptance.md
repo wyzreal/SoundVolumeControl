@@ -1,6 +1,9 @@
-# Manual acceptance — 0.8.2 candidate
+# Manual acceptance — 0.8.3 candidate
 
-Status: **not run for the current installed candidate**. Do not infer a pass
+Status: **partial pass on 2026-09-12 for 0.8.3**. The user confirmed audible music
+and two Disable/Enable cycles without errors. Live broker logs recorded three
+successful authenticated grants; read-only driver checks passed. Remaining items
+are unverified, including a subsequent login. Do not infer a pass
 from an automated test, an Enabled label, or earlier prototype observations.
 This checklist guides intentional user testing; it does not authorize an agent
 to install software, switch outputs, or generate test sounds without a request.
@@ -12,7 +15,7 @@ to install software, switch outputs, or generate test sounds without a request.
 - Physical device/model/connection:
 - Normal output and system-sounds output before installation:
 - Physical nominal sample rate (must match 48 kHz):
-- App/helper/driver versions (expected 0.8.2/build 14):
+- App/helper/driver versions (expected 0.8.3/build 15):
 - DMG checksum/source (see [validation coverage](validation.md)):
 
 Keep System Settings > Sound > Output available for recovery. Use ordinary

@@ -1,6 +1,6 @@
-# Developer guide — 0.8.2
+# Developer guide — 0.8.3
 
-All app/helper/driver bundles are 0.8.2/build 14. Native arm64, macOS 14+,
+All app/helper/driver bundles are 0.8.3/build 15. Native arm64, macOS 14+,
 system frameworks only. The fourth executable is a small XPC broker.
 
 ## Components
@@ -23,7 +23,7 @@ It is not linked into production. Old shm names remain only for migration cleanu
 ```sh
 make check
 make dmg
-sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.8.2.dmg
+sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.8.3.dmg
 ```
 
 Targets: driver-test, processor-test, shared-reader-test, volume-curve-test,

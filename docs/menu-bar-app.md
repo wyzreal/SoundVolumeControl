@@ -1,8 +1,8 @@
 # Menu-bar app
 
-- App: 0.8.2 (build 14), native arm64 development candidate
-- Embedded helper: 0.8.2 (build 14)
-- Driver: 0.8.2 (build 14)
+- App: 0.8.3 (build 15), native arm64 development candidate
+- Embedded helper: 0.8.3 (build 15)
+- Driver: 0.8.3 (build 15)
 - Small authenticated XPC broker, with no UI or audio processing
 - Minimum macOS: 14.0
 
@@ -43,7 +43,7 @@ Start at Login is separately controlled by
 6. After its ready acknowledgement, select Sound Volume as normal and system
    output; show **Enabled — physical device** after the active acknowledgement.
 
-Startup times out after eight seconds. Changing physical output first restores
+Startup times out after 25 seconds. Changing physical output first restores
 the real defaults, then restarts the helper through the same readiness sequence.
 
 If any step fails, stop the helper, restore the saved real outputs, persist the

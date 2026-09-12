@@ -1,17 +1,28 @@
 #include "SecureAudio.h"
+#include "StartupTiming.h"
 #include "SharedAudioReader.h"
 #include <assert.h>
 #include <mach/mach_vm.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <errno.h>
 
 int main(int argc, char **argv) {
     assert(argc == 4);
-    alarm(20);
+    alarm(35);
     bool denied = strcmp(argv[3], "deny") == 0;
     bool revoke = strcmp(argv[3], "revoke") == 0;
-    SVCReaderConnection *connection = SVCReaderOpen(argv[1], argv[2], false, denied ? 1 : 5);
-    if (denied) { assert(connection == NULL); puts("reader denied: PASS"); return 0; }
+    bool timeout = strcmp(argv[3], "timeout") == 0;
+    bool busy = strcmp(argv[3], "busy") == 0;
+    bool hold = strcmp(argv[3], "hold") == 0;
+    SVCReaderConnection *connection = SVCReaderOpen(argv[1], argv[2], false,
+        timeout ? 1 : SVC_BUFFER_STARTUP_SECONDS);
+    if (denied || timeout || busy) {
+        assert(connection == NULL);
+        assert(timeout ? errno == ETIMEDOUT : busy ? errno == EBUSY
+               : errno == EACCES || errno == ECONNRESET);
+        puts("reader expected failure: PASS"); return 0;
+    }
     assert(connection != NULL);
     const SVCSharedAudio *audio = SVCReaderAudio(connection);
     for (unsigned i = 0; i < 100 && atomic_load(&audio->writeMixCount) < 5; ++i) usleep(10000);
@@ -23,6 +34,7 @@ int main(int argc, char **argv) {
     for (unsigned i = 0; i < 512; ++i) assert(samples[i] == (i % 2 ? -0.25f : 0.25f));
     assert(mach_vm_protect(mach_task_self(), (mach_vm_address_t)(uintptr_t)audio,
         SVCAudioAllocationSize(), FALSE, VM_PROT_READ | VM_PROT_WRITE) == KERN_PROTECTION_FAILURE);
+    if (hold) { puts("READY"); fflush(stdout); for (;;) pause(); }
     if (revoke) {
         puts("READY"); fflush(stdout);
         for (unsigned i = 0; i < 500 && SVCReaderIsAlive(connection); ++i) usleep(10000);

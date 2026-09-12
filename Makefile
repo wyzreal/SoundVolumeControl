@@ -72,7 +72,7 @@ $(SECURE_WRITER_TEST): tests/secure-writer-test.c driver/SoundVolumeControl.c $(
 	$(CC) $(CFLAGS) -fblocks -DSVC_SECURE_IPC_TESTING -Icommon -Idriver $< driver/SoundVolumeControl.c $(SECURE_MEMORY) $(SECURE_WRITER) -framework CoreAudio -framework CoreFoundation -o $@
 	/usr/bin/codesign --force --options runtime --sign - "$@"
 
-$(SECURE_READER_TEST): tests/secure-reader-test.c $(SECURE_MEMORY) $(SECURE_READER) forwarder/SharedAudioReader.c common/SecureAudio.h common/SharedAudio.h
+$(SECURE_READER_TEST): tests/secure-reader-test.c $(SECURE_MEMORY) $(SECURE_READER) forwarder/SharedAudioReader.c common/SecureAudio.h common/SharedAudio.h common/StartupTiming.h
 	$(CC) $(CFLAGS) -fblocks -Icommon -Iforwarder $< $(SECURE_MEMORY) $(SECURE_READER) forwarder/SharedAudioReader.c -framework CoreFoundation -o $@
 	/usr/bin/codesign --force --options runtime --sign - "$@"
 
@@ -107,7 +107,7 @@ $(FORWARDER_APP): $(FORWARDER_BINARY) $(FORWARDER_PLIST)
 	/usr/bin/codesign --force --options runtime --sign - "$@"
 	touch "$@"
 
-$(FORWARDER_BINARY): forwarder/main.m forwarder/AudioProcessor.c forwarder/AudioProcessor.h forwarder/SharedAudioReader.c forwarder/SharedAudioReader.h driver/SoundVolumeControlIDs.h common/SharedAudio.h common/SecureAudio.h $(SECURE_MEMORY) $(SECURE_READER) common/VolumeCurve.h
+$(FORWARDER_BINARY): forwarder/main.m common/StartupTiming.h forwarder/AudioProcessor.c forwarder/AudioProcessor.h forwarder/SharedAudioReader.c forwarder/SharedAudioReader.h driver/SoundVolumeControlIDs.h common/SharedAudio.h common/SecureAudio.h $(SECURE_MEMORY) $(SECURE_READER) common/VolumeCurve.h
 	mkdir -p $(dir $@)
 	$(CC) $(FORWARDER_CFLAGS) -fblocks -fobjc-arc -Icommon -Idriver -Iforwarder \
 		forwarder/main.m forwarder/AudioProcessor.c forwarder/SharedAudioReader.c $(SECURE_MEMORY) $(SECURE_READER) \
@@ -125,7 +125,7 @@ $(MENU_APP): $(MENU_BINARY) $(MENU_HELPER_APP) $(MENU_PLIST) $(MENU_ICON)
 	/usr/bin/codesign --force --sign - "$@"
 	touch "$@"
 
-$(MENU_BINARY): app/main.m driver/SoundVolumeControlIDs.h
+$(MENU_BINARY): app/main.m common/StartupTiming.h driver/SoundVolumeControlIDs.h
 	mkdir -p $(dir $@)
 	$(CC) $(FORWARDER_CFLAGS) -fobjc-arc -fblocks -Idriver app/main.m \
 		-framework AppKit -framework CoreAudio -framework Foundation \
@@ -211,7 +211,7 @@ privacy-audit: $(DRIVER_BUNDLE) $(FORWARDER_APP) $(MENU_APP)
 	! /usr/bin/strings $(BROKER) | /usr/bin/grep -q test-revoke
 
 .PHONY: ipc-test app-test
-$(APP_TEST): tests/app-lifecycle-tests.m app/main.m driver/SoundVolumeControlIDs.h
+$(APP_TEST): tests/app-lifecycle-tests.m common/StartupTiming.h app/main.m driver/SoundVolumeControlIDs.h
 	mkdir -p $(BUILD_DIR)
 	$(CC) $(FORWARDER_CFLAGS) -fobjc-arc -fblocks -Idriver $< \
 		-framework AppKit -framework CoreAudio -framework Foundation \

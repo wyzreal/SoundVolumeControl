@@ -7,10 +7,13 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <os/log.h>
 
 // All broker state is confined to one serial queue. No PCM is mapped here.
 static dispatch_queue_t queue;
 static xpc_connection_t writer, reader;
+static xpc_object_t pendingGrant;
 static uint64_t generation;
 static bool opened;
 static SCDynamicStoreRef sessionStore;
@@ -41,6 +44,7 @@ static void Rotate(bool enabled) {
 }
 
 static void DropReader(void) {
+    if (pendingGrant != NULL) { xpc_release(pendingGrant); pendingGrant = NULL; }
     if (reader != NULL) {
         xpc_connection_cancel(reader);
         xpc_release(reader);
@@ -94,6 +98,9 @@ static xpc_connection_t Listen(const char *name, const char *requirement, bool i
         }
         xpc_connection_set_event_handler(peer, ^(xpc_object_t event) {
             if (xpc_get_type(event) == XPC_TYPE_ERROR) {
+                if (event == XPC_ERROR_PEER_CODE_SIGNING_REQUIREMENT) {
+                    os_log_error(OS_LOG_DEFAULT, "SoundVolumeControl: rejected %{public}s signature", isWriter ? "writer" : "reader");
+                }
                 if (peer == reader) DropReader();
                 if (peer == writer) {
                     xpc_release(writer);
@@ -115,27 +122,37 @@ static xpc_connection_t Listen(const char *name, const char *requirement, bool i
             if (isWriter && strcmp(op, "hello") == 0) {
                 if (writer != NULL && writer != peer) { xpc_connection_cancel(peer); return; }
                 if (writer == NULL) { writer = peer; xpc_retain(writer); }
+                os_log_info(OS_LOG_DEFAULT, "SoundVolumeControl: authenticated writer connected");
                 Rotate(reader != NULL && opened);
             } else if (isWriter && peer == writer && strcmp(op, "publish") == 0) {
-                if (reader == NULL || !opened || xpc_dictionary_get_uint64(event, "generation") != generation) return;
+                if (reader == NULL || !opened || pendingGrant == NULL || xpc_dictionary_get_uint64(event, "generation") != generation) return;
                 if (xpc_connection_get_euid(reader) != ConsoleUID()) { DropReader(); return; }
                 mach_port_t port = xpc_dictionary_copy_mach_send(event, "memory");
                 if (port == MACH_PORT_NULL) { DropReader(); return; }
-                xpc_object_t grant = xpc_dictionary_create(NULL, NULL, 0);
+                xpc_object_t grant = pendingGrant;
+                pendingGrant = NULL;
                 xpc_dictionary_set_string(grant, "op", "grant");
                 xpc_dictionary_set_mach_send(grant, "memory", port);
                 xpc_connection_send_message(reader, grant);
                 mach_port_deallocate(mach_task_self(), port);
                 xpc_release(grant);
+                os_log_info(OS_LOG_DEFAULT, "SoundVolumeControl: granted reader buffer");
             } else if (!isWriter && strcmp(op, "open") == 0) {
+                xpc_object_t reply = xpc_dictionary_create_reply(event);
+                if (reply == NULL) { xpc_connection_cancel(peer); return; }
                 uid_t uid = xpc_connection_get_euid(peer);
                 if (uid == 0 || uid == (uid_t)-1 || uid != ConsoleUID() || reader != NULL) {
-                    xpc_connection_cancel(peer);
+                    xpc_dictionary_set_string(reply, "op", "error");
+                    xpc_dictionary_set_int64(reply, "error", uid != 0 && uid == ConsoleUID() && reader != NULL ? EBUSY : EACCES);
+                    xpc_connection_send_message(peer, reply);
+                    xpc_release(reply);
                     return;
                 }
+                pendingGrant = reply;
                 reader = peer;
                 xpc_retain(reader);
                 opened = true;
+                os_log_info(OS_LOG_DEFAULT, "SoundVolumeControl: reader authenticated; writer available=%{public}d", writer != NULL);
                 Rotate(true);
             } else {
                 xpc_connection_cancel(peer);

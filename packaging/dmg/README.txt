@@ -1,4 +1,4 @@
-SoundVolumeControl 0.8.2 development candidate
+SoundVolumeControl 0.8.3 development candidate
 ============================================
 
 INSTALL MANUALLY
@@ -15,18 +15,12 @@ Reopen the app from Applications or Spotlight when closed.
 
 WHAT CHANGED
 
-0.8.1 fixes error 60 caused by the broker rejecting Apple’s separate Core Audio
-driver helper. The exact helper identity is now allowed with Apple-signature
-verification still required. Install the complete matching package.
+0.8.3 fixes the buffer handshake so rejected connections do not silently wait
+for error 60. Cold setup has a 20-second buffer deadline and 25-second app
+startup deadline. Competing readers get an explicit error. Authentication,
+read-only memory, and safe route selection remain enforced.
 
-The old globally readable audio buffer is replaced by anonymous memory and
-authenticated XPC. The broker checks the Apple Core Audio host, exact helper
-build, and active console user. Clients check the broker too. The kernel
-enforces read-only access; reconnects get fresh buffers and old mappings stop.
-
-The broker does not process or record audio and adds no UI. No microphone,
-ScreenCaptureKit, or process-tap API is used. Decline and report any privacy
-prompt rather than granting permission as a workaround.
+The matching broker, driver, helper, and app must be installed together.
 
 INSTALLED FILES
 

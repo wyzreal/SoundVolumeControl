@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.3 — 2026-09-12
+
+- Replace the one-way buffer request with an authenticated request/reply handshake.
+  XPC authentication failures and disconnects no longer silently expire as error 60.
+- Allow 20 seconds for cold buffer setup and 25 seconds for app startup, keeping
+  the physical route until the helper is ready.
+- Report competing readers explicitly and release pending grants on cancellation.
+- Cover delayed writer startup, cancelled requests, competing readers, and broker
+  restart in isolated integration tests.
+- Bound the diagnostic helper duration while waiting for route selection too.
+
 ## 0.8.2 — 2026-09-09
 
 - Enable volume control automatically on every launch, including Start at Login.

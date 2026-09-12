@@ -3,6 +3,7 @@
 #import <ServiceManagement/ServiceManagement.h>
 
 #include "SoundVolumeControlIDs.h"
+#include "../common/StartupTiming.h"
 
 #include <stdbool.h>
 
@@ -738,7 +739,7 @@ static OSStatus SVCDefaultDeviceChanged(
         [self updatePresentation];
         return NO;
     }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 8 * NSEC_PER_SEC),
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, SVC_APP_STARTUP_SECONDS * NSEC_PER_SEC),
                    dispatch_get_main_queue(), ^{
         SVCAppDelegate *strongSelf = weakSelf;
         if (strongSelf != nil && generation == strongSelf.launchGeneration

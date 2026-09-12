@@ -32,7 +32,7 @@ command compiled out of production.
 
 ```sh
 make dmg
-sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.8.2.dmg
+sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.8.3.dmg
 ```
 
 The audit mounts the DMG read-only and expands the package. It checks the
@@ -57,3 +57,21 @@ Revocation stops future updates; previously delivered samples cannot be recalled
 Physical-device support, native controls, perceived volume, clicks, latency,
 restoration, real user switching, sleep/wake, long-run drift, CPU, memory, and
 energy use require installed measurements.
+
+## Intermittent startup correction (0.8.3)
+
+A regression reproduced the old behavior: a rejected reader signature waited
+for the deadline and returned ETIMEDOUT. Buffer opens now expect an XPC reply;
+rejection returns an authentication error or connection reset, and an occupied
+reader slot returns EBUSY. Both directions still enforce the same signature pins.
+Pending grants are released on disconnect; asynchronous replies retain reader
+state until completion even if the caller times out.
+
+A six-second writer delay (longer than the old five-second deadline), cancellation
+before writer arrival, reconnects, concurrent-reader rejection, and broker
+restart all pass. Cold setup has a bounded 20-second budget, with a 25-second app
+watchdog. The complete update was installed on 2026-09-12; live logs confirmed
+writer authentication, reader authentication, and a buffer grant. Read-only
+installed driver property checks passed. The user confirmed audible music and
+two Disable/Enable cycles without errors; live logs recorded three successful
+grants. A subsequent login and the broader hardware checklist remain unverified.

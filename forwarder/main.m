@@ -4,6 +4,7 @@
 #include "AudioProcessor.h"
 #include "SharedAudio.h"
 #include "SecureAudio.h"
+#include "StartupTiming.h"
 #include "SharedAudioReader.h"
 #include "SoundVolumeControlIDs.h"
 #include "VolumeCurve.h"
@@ -396,7 +397,7 @@ static UInt32 MaximumFrames(const AudioBufferList *list) {
 static SVCReaderConnection *MapDriverAudio(void) {
     char *requirement = SVCCopyBrokerRequirement(CFSTR(SVC_FORWARDER_BUNDLE_ID));
     if (requirement == NULL) { errno = EACCES; return NULL; }
-    SVCReaderConnection *reader = SVCReaderOpen(SVC_BROKER_READER, requirement, true, 5);
+    SVCReaderConnection *reader = SVCReaderOpen(SVC_BROKER_READER, requirement, true, SVC_BUFFER_STARTUP_SECONDS);
     free(requirement);
     return reader;
 }
@@ -720,8 +721,14 @@ int main(int argc, const char *argv[]) {
         context.secureReader = MapDriverAudio();
         context.sharedAudio = context.secureReader == NULL ? NULL : SVCReaderAudio(context.secureReader);
         if (context.sharedAudio == NULL) {
-            fprintf(stderr, "Driver buffer failed: %s (%d). Install the matching app, driver, and audio broker together.\n",
-                    strerror(errno), errno);
+            int error = errno;
+            const char *detail = error == EACCES
+                ? "Authentication rejected. Install the matching app, driver, and broker together."
+                : error == EBUSY ? "Another audio helper is connected. Quit other copies of SoundVolumeControl."
+                : error == ETIMEDOUT ? "The audio service did not provide a buffer within 20 seconds. Try Enable again."
+                : error == ECONNRESET ? "The audio service disconnected during startup. Try Enable again."
+                : "Invalid audio buffer response. Install the matching components together.";
+            fprintf(stderr, "Driver buffer failed: %s (%d). %s\n", strerror(error), error, detail);
             Cleanup(&context);
             CFRelease(physicalUIDRef);
             if (physicalNameRef != NULL) {
@@ -838,12 +845,14 @@ int main(int argc, const char *argv[]) {
             return EXIT_FAILURE;
         }
 
+        time_t endTime = runSeconds == 0 ? 0 : time(NULL) + (time_t)runSeconds;
         puts("Forwarder ready.");
         fflush(stdout);
         if (!alwaysActive && DefaultOutput() != context.virtualDevice) {
             puts("Waiting for Sound Volume to become the macOS output.");
             fflush(stdout);
-            while (!gShouldStop && SVCReaderIsAlive(context.secureReader)
+            while (!gShouldStop && (endTime == 0 || time(NULL) < endTime)
+                   && SVCReaderIsAlive(context.secureReader)
                    && DefaultOutput() != context.virtualDevice) {
                 (void)dispatch_semaphore_wait(
                     gStateSemaphore,
@@ -851,12 +860,11 @@ int main(int argc, const char *argv[]) {
                 );
             }
         }
-        if (!gShouldStop && SVCReaderIsAlive(context.secureReader)) {
+        if (!gShouldStop && (endTime == 0 || time(NULL) < endTime)
+            && SVCReaderIsAlive(context.secureReader)) {
             puts("Forwarding is active.");
         }
         fflush(stdout);
-        time_t endTime = runSeconds == 0
-            ? 0 : time(NULL) + (time_t)runSeconds;
         while (!gShouldStop && (endTime == 0 || time(NULL) < endTime)) {
             if (!SVCReaderIsAlive(context.secureReader)) {
                 fputs("Audio broker failed: connection revoked or stopped.\n", stderr);

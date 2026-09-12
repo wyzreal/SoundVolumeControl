@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <errno.h>
 
 static NSMutableArray<NSTask *> *children;
 static NSString *temporaryDirectory, *domain, *label;
@@ -68,7 +69,9 @@ int main(int argc, char **argv) {
         if (argc == 4 && strcmp(argv[1], "--unauthorized") == 0) {
             SVCReaderConnection *reader = SVCReaderOpen(argv[2], argv[3], false, 1);
             if (reader != NULL) { SVCReaderClose(reader); return 1; }
-            return 0;
+            // A remote rejection may be surfaced by XPC as a reset. It must
+            // not silently consume the deadline and masquerade as error 60.
+            return errno == EACCES || errno == ECONNRESET ? 0 : 1;
         }
         Check(argc == 1, "arguments");
         children = [NSMutableArray array];
@@ -126,9 +129,16 @@ int main(int argc, char **argv) {
         Check([configuration writeToFile:plist atomically:YES], "temporary launchd configuration");
         Check(Run(@"/bin/launchctl", @[@"bootstrap", domain, plist]) == 0, "temporary test service registration");
         registered = YES;
+        Check(Run(reader, @[readerName, requirements[0], @"timeout"]) == 0,
+              "missing writer times out and cancels pending grant");
+        usleep(150000);
+        NSTask *delayedReader = Start(reader, @[readerName, requirements[0], @"read"], nil);
+        // Exceeds the old five-second production deadline, as in cold boot logs.
+        usleep(6000000);
         NSTask *writerTask = Start(writer, @[writerName, requirements[0]], nil);
-        Check(Run(reader, @[readerName, requirements[0], @"read"]) == 0,
-              "authenticated separate-process driver audio");
+        [delayedReader waitUntilExit];
+        Check(delayedReader.terminationStatus == 0,
+              "reader survives six-second HAL delay after cancelled earlier request");
         usleep(100000);
         Check(Run([build stringByAppendingPathComponent:@"secure-ipc-tests"],
             @[@"--unauthorized", readerName, requirements[0]]) == 0,
@@ -138,6 +148,19 @@ int main(int argc, char **argv) {
         Check(Run(reader, @[readerName, requirements[1], @"deny"]) == 0,
               "wrong server signature rejected");
         usleep(100000);
+        NSPipe *holdOutput = [NSPipe pipe];
+        NSTask *holder = Start(reader, @[readerName, requirements[0], @"hold"], holdOutput);
+        NSString *holding = [[NSString alloc] initWithData:holdOutput.fileHandleForReading.availableData encoding:NSUTF8StringEncoding];
+        Check([holding containsString:@"READY"], "first reader holds authenticated buffer");
+        Check(Run(reader, @[readerName, requirements[0], @"busy"]) == 0,
+              "second reader receives explicit busy error without timeout");
+        [holder terminate]; [holder waitUntilExit];
+        usleep(150000);
+        Check(Run(@"/bin/launchctl", @[@"kickstart", @"-k", [domain stringByAppendingFormat:@"/%@", label]]) == 0,
+              "restart isolated broker");
+        Check(Run(reader, @[readerName, requirements[0], @"read"]) == 0,
+              "writer reconnects after broker restart and grants fresh buffers");
+        usleep(150000);
         NSPipe *revokeOutput = [NSPipe pipe];
         NSTask *revokeReader = Start(reader, @[readerName, requirements[0], @"revoke"], revokeOutput);
         NSData *ready = revokeOutput.fileHandleForReading.availableData;

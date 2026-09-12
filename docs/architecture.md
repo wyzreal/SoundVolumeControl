@@ -1,6 +1,6 @@
 # Architecture: output-only audio with authenticated IPC
 
-Current architecture for 0.8.2. Development candidate, not an independently
+Current architecture for 0.8.3. Development candidate, not an independently
 audited or hardware-validated release.
 
 ## Audio and control paths
@@ -68,7 +68,7 @@ a compromised trusted Core Audio host, or a compromised authorized helper.
 Already delivered audio cannot be recalled. No independent audit is claimed.
 
 Enable waits for mapping and physical-output readiness before selecting Sound
-Volume. Startup times out after eight seconds. Disable and Quit restore only
+Volume. Startup times out after 25 seconds. Disable and Quit restore only
 selectors still pointing to Sound Volume, preserving external user changes.
 Normal Quit is cancelled if restoration fails. Broker/helper loss prompts
 restoration through supervision.
