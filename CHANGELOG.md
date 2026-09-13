@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.4 — 2026-09-13
+
+- Accept output-scoped nominal sample-rate queries from legacy Core Audio
+  clients such as Warcraft III's FMOD 4 engine. Previously these queries
+  returned unknown-property despite a valid global 48 kHz rate.
+- Add driver regression coverage and an installed legacy API check to
+  `audio-route-verify`.
+- Installed 0.8.4 passes the legacy query check; the user confirmed Warcraft III
+  starts without the reported audio-device error. Audible playback and broader
+  game compatibility remain unverified.
+
 ## 0.8.3 — 2026-09-12
 
 - Replace the one-way buffer request with an authenticated request/reply handshake.

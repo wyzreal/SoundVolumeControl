@@ -1,6 +1,6 @@
 # SoundVolumeControl user guide
 
-Version 0.8.3 development candidate for Apple Silicon and macOS 14+.
+Version 0.8.4 development candidate for Apple Silicon and macOS 14+.
 
 Audio uses authenticated XPC and anonymous read-only memory. Installed playback
 and hardware reliability still need [validation](validation.md).
@@ -14,7 +14,7 @@ It stays in the menu bar and has no separate window or custom volume slider.
 ## Install from the DMG
 
 1. If an older copy is running, use its **Quit SoundVolumeControl** command.
-2. Open `SoundVolumeControl-0.8.3.dmg` from a trusted source.
+2. Open `SoundVolumeControl-0.8.4.dmg` from a trusted source.
 3. Double-click **Install SoundVolumeControl.pkg**.
 4. Follow Installer and enter an administrator password.
 5. The installer adds `SoundVolumeControl.app` to `/Applications`, installs the

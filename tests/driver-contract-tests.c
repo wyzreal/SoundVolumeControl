@@ -274,6 +274,39 @@ static void TestDeviceAndStream(AudioServerPlugInDriverRef driver) {
                    sizeof(sampleRate), &sampleRate) == noErr);
 }
 
+static void TestLegacyOutputSampleRate(AudioServerPlugInDriverRef driver) {
+    // AudioDeviceGetProperty(device, 0, false, 'nsrt', ...) used by FMOD 4
+    // reaches the driver with output scope, rather than global scope.
+    AudioObjectPropertyAddress address = MakeAddress(
+        kAudioDevicePropertyNominalSampleRate, kAudioObjectPropertyScopeOutput);
+    assert((*driver)->HasProperty(driver, kSVCObjectDevice, 0, &address));
+    UInt32 size = 0;
+    assert((*driver)->GetPropertyDataSize(driver, kSVCObjectDevice, 0,
+                                          &address, 0, NULL, &size) == noErr);
+    assert(size == sizeof(Float64));
+    Float64 rate = 0;
+    assert(GetData(driver, kSVCObjectDevice, address, 0, NULL,
+                   sizeof(rate), &size, &rate) == noErr);
+    assert(rate == kSVCSampleRate);
+    assert(GetData(driver, kSVCObjectDevice, address, 0, NULL,
+                   sizeof(Float32), &size, &rate)
+           == kAudioHardwareBadPropertySizeError);
+    Boolean settable = false;
+    assert((*driver)->IsPropertySettable(driver, kSVCObjectDevice, 0,
+                                         &address, &settable) == noErr);
+    assert(settable);
+    assert(SetData(driver, kSVCObjectDevice, address, sizeof(rate), &rate) == noErr);
+    rate = 44100;
+    assert(SetData(driver, kSVCObjectDevice, address, sizeof(rate), &rate)
+           == kAudioHardwareIllegalOperationError);
+    address.mScope = kAudioObjectPropertyScopeGlobal;
+    assert(GetData(driver, kSVCObjectDevice, address, 0, NULL,
+                   sizeof(rate), &size, &rate) == noErr);
+    assert(rate == kSVCSampleRate);
+    address.mScope = kAudioObjectPropertyScopeInput;
+    assert(!(*driver)->HasProperty(driver, kSVCObjectDevice, 0, &address));
+}
+
 static void TestVolumeAndMute(AudioServerPlugInDriverRef driver) {
     UInt32 size = 0;
     Boolean settable = false;
@@ -468,6 +501,7 @@ int main(void) {
 
     TestFactoryAndTopology(driver);
     TestDeviceAndStream(driver);
+    TestLegacyOutputSampleRate(driver);
     TestVolumeAndMute(driver);
     TestIO(driver);
     TestErrors(driver);

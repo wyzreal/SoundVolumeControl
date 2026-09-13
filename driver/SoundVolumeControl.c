@@ -419,6 +419,11 @@ static Boolean IsValidAddress(AudioObjectID objectID,
         return false;
     }
     switch (address->mSelector) {
+        case kAudioDevicePropertyNominalSampleRate:
+            // Legacy AudioDeviceGetProperty(..., isInput=false, 'nsrt', ...)
+            // preserves output scope. FMOD 4 treats rejection as no audio device.
+            return address->mScope == kAudioObjectPropertyScopeGlobal
+                || address->mScope == kAudioObjectPropertyScopeOutput;
         case kAudioObjectPropertyOwnedObjects:
         case kAudioDevicePropertyLatency:
         case kAudioDevicePropertyStreams:

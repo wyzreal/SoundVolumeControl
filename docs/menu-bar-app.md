@@ -1,8 +1,8 @@
 # Menu-bar app
 
-- App: 0.8.3 (build 15), native arm64 development candidate
-- Embedded helper: 0.8.3 (build 15)
-- Driver: 0.8.3 (build 15)
+- App: 0.8.4 (build 16), native arm64 development candidate
+- Embedded helper: 0.8.4 (build 16)
+- Driver: 0.8.4 (build 16)
 - Small authenticated XPC broker, with no UI or audio processing
 - Minimum macOS: 14.0
 

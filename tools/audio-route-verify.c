@@ -182,6 +182,23 @@ static bool CheckUInt32(AudioDeviceID device,
 
 static bool CheckStaticProperties(AudioDeviceID device) {
     bool passed = true;
+    Float64 legacyRate = 0;
+    UInt32 legacySize = sizeof(legacyRate);
+    // Intentionally exercise the API used by older native game audio engines.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    OSStatus legacyStatus = AudioDeviceGetProperty(
+        device, 0, false, kAudioDevicePropertyNominalSampleRate,
+        &legacySize, &legacyRate);
+#pragma clang diagnostic pop
+    if (legacyStatus != noErr || legacySize != sizeof(legacyRate)
+        || legacyRate != kSVCSampleRate) {
+        fprintf(stderr, "FAIL: legacy output nominal sample rate: status=%d, rate=%g\n",
+                legacyStatus, legacyRate);
+        passed = false;
+    } else {
+        printf("PASS: legacy output nominal sample rate = %.0f\n", legacyRate);
+    }
     bool ok = false;
     int outputChannels = ChannelCount(device, kAudioObjectPropertyScopeOutput, &ok);
     if (!ok || outputChannels != kSVCChannelCount) {

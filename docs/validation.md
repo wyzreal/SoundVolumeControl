@@ -32,7 +32,7 @@ command compiled out of production.
 
 ```sh
 make dmg
-sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.8.3.dmg
+sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.8.4.dmg
 ```
 
 The audit mounts the DMG read-only and expands the package. It checks the
@@ -48,6 +48,25 @@ missing from the allowlist, leaving the reader waiting for a memory grant until
 ETIMEDOUT (60). Version 0.8.1 adds the exact helper identifier under the Apple
 signing anchor. Tests verify the real helper is accepted and impersonation is
 rejected. Actual playback after this correction still requires manual acceptance.
+
+## Warcraft III legacy device query regression
+
+On 2026-09-13, the installed Warcraft III 3.0.0.24268 executable's FMOD 4
+backend was observed to call `AudioDeviceGetProperty(device, 0, false,
+kAudioDevicePropertyNominalSampleRate, ...)` and return an initialization
+error when that query fails. A standalone read-only reproduction against
+Sound Volume returned 2003332927 (`who?`); the global-scope query on the same
+device returned 48000 Hz successfully. The driver now also accepts output
+scope for nominal sample rate. Its fixed rate and output-only topology remain.
+
+The contract regression fails before the fix and checks property discovery,
+size, reads, same-rate writes, and rejection of unsupported rates.
+`make audio-route-verify` additionally exercises the actual legacy API through
+the installed HAL. On 2026-09-13, installed 0.8.4 passed this check at 48000 Hz
+and all read-only route checks. The user confirmed Warcraft III starts without
+the reported error. Audible game playback remains unverified.
+This addresses the reproduced query failure; it does not establish compatibility
+with every game or audio engine. No game files or preferences are modified.
 
 ## Limits
 

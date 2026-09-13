@@ -1,6 +1,12 @@
-# Manual acceptance — 0.8.3 candidate
+# Manual acceptance — 0.8.4 candidate
 
-Status: **partial pass on 2026-09-12 for 0.8.3**. The user confirmed audible music
+0.8.4 partial pass on 2026-09-13: the installed driver reports version 0.8.4,
+and read-only route verification passes, including the legacy output-scope
+sample-rate query at 48000 Hz. The user confirmed Warcraft III starts without
+the reported audio-device error. Game audio playback and broader compatibility
+remain unverified.
+
+Previous release status: **partial pass on 2026-09-12 for 0.8.3**. The user confirmed audible music
 and two Disable/Enable cycles without errors. Live broker logs recorded three
 successful authenticated grants; read-only driver checks passed. Remaining items
 are unverified, including a subsequent login. Do not infer a pass
@@ -15,7 +21,7 @@ to install software, switch outputs, or generate test sounds without a request.
 - Physical device/model/connection:
 - Normal output and system-sounds output before installation:
 - Physical nominal sample rate (must match 48 kHz):
-- App/helper/driver versions (expected 0.8.3/build 15):
+- App/helper/driver versions (expected 0.8.4/build 16):
 - DMG checksum/source (see [validation coverage](validation.md)):
 
 Keep System Settings > Sound > Output available for recovery. Use ordinary

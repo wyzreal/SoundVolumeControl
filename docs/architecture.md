@@ -1,6 +1,6 @@
 # Architecture: output-only audio with authenticated IPC
 
-Current architecture for 0.8.3. Development candidate, not an independently
+Current architecture for 0.8.4. Development candidate, not an independently
 audited or hardware-validated release.
 
 ## Audio and control paths
