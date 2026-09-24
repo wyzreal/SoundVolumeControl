@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.5 — 2026-09-24
+
+- Retry startup connection resets (error 54) up to twice with fresh authenticated
+  connections under the existing buffer deadline. Explicit access denial and
+  competing-reader errors still fail immediately; established session revocation
+  remains unchanged.
+- Exercise repeated startup disconnects in the isolated XPC integration tests
+  and log console-session revocation for diagnosis.
+
 ## 0.8.4 — 2026-09-13
 
 - Accept output-scoped nominal sample-rate queries from legacy Core Audio

@@ -1,4 +1,4 @@
-SoundVolumeControl 0.8.4 development candidate
+SoundVolumeControl 0.8.5 development candidate
 ============================================
 
 INSTALL MANUALLY
@@ -53,4 +53,5 @@ This local build is ad-hoc signed, not Developer ID signed or notarized.
 macOS may require Control-click > Open or Privacy & Security approval.
 Install only from a trusted source. No independent security audit is claimed.
 
-0.8.4 fixes legacy Core Audio sample-rate queries used by Warcraft III / FMOD 4.
+0.8.5 retries transient startup connection resets (error 54) with fresh authentication.
+Installed login recovery still needs manual verification.

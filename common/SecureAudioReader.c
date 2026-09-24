@@ -3,6 +3,7 @@
 #include <xpc/xpc.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <time.h>
 
 struct SVCReaderConnection {
     xpc_connection_t connection;
@@ -29,8 +30,8 @@ static int ConnectionError(xpc_object_t event) {
     return event == XPC_ERROR_PEER_CODE_SIGNING_REQUIREMENT ? EACCES : ECONNRESET;
 }
 
-SVCReaderConnection *SVCReaderOpen(const char *service, const char *requirement,
-                                  bool privileged, unsigned timeoutSeconds) {
+static SVCReaderConnection *OpenOnce(const char *service, const char *requirement,
+                                    bool privileged, dispatch_time_t deadline) {
     SVCReaderConnection *reader = calloc(1, sizeof(*reader));
     if (reader == NULL) return NULL;
     atomic_init(&reader->references, 1); // Owned by the connection finalizer.
@@ -91,8 +92,7 @@ SVCReaderConnection *SVCReaderOpen(const char *service, const char *requirement,
     });
     dispatch_release(queue);
     xpc_release(request);
-    long timeout = dispatch_semaphore_wait(reader->ready,
-        dispatch_time(DISPATCH_TIME_NOW, (int64_t)timeoutSeconds * NSEC_PER_SEC));
+    long timeout = dispatch_semaphore_wait(reader->ready, deadline);
     if (timeout != 0 || !atomic_load(&reader->alive)) {
         int error = timeout != 0 ? ETIMEDOUT : atomic_load(&reader->error);
         SVCReaderClose(reader);
@@ -100,6 +100,23 @@ SVCReaderConnection *SVCReaderOpen(const char *service, const char *requirement,
         return NULL;
     }
     return reader;
+}
+
+SVCReaderConnection *SVCReaderOpen(const char *service, const char *requirement,
+                                  bool privileged, unsigned timeoutSeconds) {
+    dispatch_time_t deadline = dispatch_time(DISPATCH_TIME_NOW,
+        (int64_t)timeoutSeconds * NSEC_PER_SEC);
+    // Login/session rotation or a restarting broker can revoke a pending grant.
+    // Reconnect with fresh authentication; never reuse the revoked connection.
+    // Share one deadline, and cap retries because remote signature rejection can
+    // also surface as ECONNRESET. Explicit denial and busy errors are final.
+    for (unsigned attempt = 0; attempt < 3; ++attempt) {
+        SVCReaderConnection *reader = OpenOnce(service, requirement, privileged, deadline);
+        if (reader != NULL || errno != ECONNRESET || attempt == 2) return reader;
+        struct timespec delay = { .tv_nsec = 100 * NSEC_PER_MSEC };
+        while (nanosleep(&delay, &delay) != 0 && errno == EINTR) {}
+    }
+    return NULL;
 }
 const SVCSharedAudio *SVCReaderAudio(SVCReaderConnection *reader) { return reader->audio; }
 bool SVCReaderIsAlive(SVCReaderConnection *reader) { return reader != NULL && atomic_load(&reader->alive); }

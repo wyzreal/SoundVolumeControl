@@ -116,7 +116,7 @@ int main(int argc, char **argv) {
         NSDictionary *configuration = @{
             @"Label": label,
             @"ProgramArguments": @[broker, writerName, readerName, policies[2], requirements[1],
-                                   [NSString stringWithFormat:@"%u", getuid()]],
+                                   [NSString stringWithFormat:@"%u", getuid()], @"2"],
             @"MachServices": @{writerName: @YES, readerName: @YES},
             @"StandardErrorPath": [temporaryDirectory stringByAppendingPathComponent:@"broker.log"],
         };
@@ -130,7 +130,7 @@ int main(int argc, char **argv) {
         Check(Run(@"/bin/launchctl", @[@"bootstrap", domain, plist]) == 0, "temporary test service registration");
         registered = YES;
         Check(Run(reader, @[readerName, requirements[0], @"timeout"]) == 0,
-              "missing writer times out and cancels pending grant");
+              "two startup resets share the missing-writer deadline and cancel pending grant");
         usleep(150000);
         NSTask *delayedReader = Start(reader, @[readerName, requirements[0], @"read"], nil);
         // Exceeds the old five-second production deadline, as in cold boot logs.
@@ -159,7 +159,7 @@ int main(int argc, char **argv) {
         Check(Run(@"/bin/launchctl", @[@"kickstart", @"-k", [domain stringByAppendingFormat:@"/%@", label]]) == 0,
               "restart isolated broker");
         Check(Run(reader, @[readerName, requirements[0], @"read"]) == 0,
-              "writer reconnects after broker restart and grants fresh buffers");
+              "reader survives two startup resets after broker restart and receives fresh buffers");
         usleep(150000);
         NSPipe *revokeOutput = [NSPipe pipe];
         NSTask *revokeReader = Start(reader, @[readerName, requirements[0], @"revoke"], revokeOutput);
@@ -171,6 +171,19 @@ int main(int argc, char **argv) {
         Check(revokeReader.terminationStatus == 0, "session change disconnects reader and freezes old buffer");
         Check(Run(reader, @[readerName, requirements[0], @"deny"]) == 0,
               "signed reader outside active session rejected");
+        Check(Run(@"/bin/launchctl", @[@"bootout", [domain stringByAppendingFormat:@"/%@", label]]) == 0,
+              "stop isolated broker for persistent reset test");
+        registered = NO;
+        NSMutableDictionary *resetConfiguration = [configuration mutableCopy];
+        NSMutableArray *resetArguments = [serverArguments mutableCopy];
+        resetArguments[6] = @"100";
+        resetConfiguration[@"ProgramArguments"] = resetArguments;
+        Check([resetConfiguration writeToFile:plist atomically:YES], "persistent reset configuration");
+        Check(Run(@"/bin/launchctl", @[@"bootstrap", domain, plist]) == 0,
+              "register persistent reset broker");
+        registered = YES;
+        Check(Run(reader, @[readerName, requirements[0], @"reset"]) == 0,
+              "persistent resets exhaust retries with error 54 instead of waiting for timeout");
         puts("secure-ipc-tests: PASS (real XPC authentication and driver transport; no audio device changes)");
     }
     return 0;

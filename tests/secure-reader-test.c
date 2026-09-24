@@ -15,11 +15,12 @@ int main(int argc, char **argv) {
     bool timeout = strcmp(argv[3], "timeout") == 0;
     bool busy = strcmp(argv[3], "busy") == 0;
     bool hold = strcmp(argv[3], "hold") == 0;
+    bool reset = strcmp(argv[3], "reset") == 0;
     SVCReaderConnection *connection = SVCReaderOpen(argv[1], argv[2], false,
         timeout ? 1 : SVC_BUFFER_STARTUP_SECONDS);
-    if (denied || timeout || busy) {
+    if (denied || timeout || busy || reset) {
         assert(connection == NULL);
-        assert(timeout ? errno == ETIMEDOUT : busy ? errno == EBUSY
+        assert(timeout ? errno == ETIMEDOUT : busy ? errno == EBUSY : reset ? errno == ECONNRESET
                : errno == EACCES || errno == ECONNRESET);
         puts("reader expected failure: PASS"); return 0;
     }

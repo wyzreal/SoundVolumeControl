@@ -19,6 +19,7 @@ static bool opened;
 static SCDynamicStoreRef sessionStore;
 #ifdef SVC_BROKER_TESTING
 static uid_t testConsoleUID;
+static unsigned testStartupResets;
 #endif
 
 static uid_t ConsoleUID(void) {
@@ -57,6 +58,7 @@ static void DropReader(void) {
 static void SessionChanged(SCDynamicStoreRef store, CFArrayRef keys, void *context) {
     (void)store; (void)keys; (void)context;
     // Also rotate when the UID is unchanged: never reuse a prior login lease.
+    os_log_info(OS_LOG_DEFAULT, "SoundVolumeControl: console session changed; revoking reader");
     DropReader();
 }
 
@@ -152,6 +154,13 @@ static xpc_connection_t Listen(const char *name, const char *requirement, bool i
                 reader = peer;
                 xpc_retain(reader);
                 opened = true;
+#ifdef SVC_BROKER_TESTING
+                if (testStartupResets > 0) {
+                    --testStartupResets;
+                    DropReader();
+                    return;
+                }
+#endif
                 os_log_info(OS_LOG_DEFAULT, "SoundVolumeControl: reader authenticated; writer available=%{public}d", writer != NULL);
                 Rotate(true);
             } else {
@@ -169,9 +178,10 @@ int main(int argc, char **argv) {
     const char *writerRequirement = SVC_DRIVER_REQUIREMENT;
     const char *policy = SVC_BROKER_POLICY;
 #ifdef SVC_BROKER_TESTING
-    if (argc != 6) return 64;
+    if (argc != 6 && argc != 7) return 64;
     writerName = argv[1]; readerName = argv[2]; policy = argv[3];
     writerRequirement = argv[4]; testConsoleUID = (uid_t)strtoul(argv[5], NULL, 10);
+    if (argc == 7) testStartupResets = (unsigned)strtoul(argv[6], NULL, 10);
 #else
     (void)argv;
     if (argc != 1 || geteuid() != 0) return 64;

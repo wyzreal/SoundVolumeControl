@@ -1,4 +1,7 @@
-# Manual acceptance — 0.8.4 candidate
+# Manual acceptance — 0.8.5 candidate
+
+0.8.5 installed login recovery and playback: **not yet tested**. Automated XPC
+coverage verifies bounded recovery from startup resets and persistent failure.
 
 0.8.4 partial pass on 2026-09-13: the installed driver reports version 0.8.4,
 and read-only route verification passes, including the legacy output-scope
@@ -21,7 +24,7 @@ to install software, switch outputs, or generate test sounds without a request.
 - Physical device/model/connection:
 - Normal output and system-sounds output before installation:
 - Physical nominal sample rate (must match 48 kHz):
-- App/helper/driver versions (expected 0.8.4/build 16):
+- App/helper/driver versions (expected 0.8.5/build 17):
 - DMG checksum/source (see [validation coverage](validation.md)):
 
 Keep System Settings > Sound > Output available for recovery. Use ordinary
