@@ -1,7 +1,14 @@
-# Manual acceptance — 0.8.5 candidate
+# Manual acceptance — 0.8.6 candidate
 
-0.8.5 installed login recovery and playback: **not yet tested**. Automated XPC
-coverage verifies bounded recovery from startup resets and persistent failure.
+0.8.6 installed partial pass on 2026-11-11: the full package upgraded
+successfully; app/helper/driver report 0.8.6/build 18. Live logs at 11:45:00–02
+confirm writer authentication, reader authentication with writer available,
+and a buffer grant. Read-only `audio-route-verify` passed. Audible playback
+and installed cold-boot/login recovery remain **not yet tested**.
+
+Cold-start service-registration recovery passes isolated XPC integration;
+an installed reboot test is pending. Automated XPC coverage also verifies
+bounded reader recovery from startup resets and persistent failure.
 
 0.8.4 partial pass on 2026-09-13: the installed driver reports version 0.8.4,
 and read-only route verification passes, including the legacy output-scope
@@ -24,7 +31,7 @@ to install software, switch outputs, or generate test sounds without a request.
 - Physical device/model/connection:
 - Normal output and system-sounds output before installation:
 - Physical nominal sample rate (must match 48 kHz):
-- App/helper/driver versions (expected 0.8.5/build 17):
+- App/helper/driver versions (expected 0.8.6/build 18):
 - DMG checksum/source (see [validation coverage](validation.md)):
 
 Keep System Settings > Sound > Output available for recovery. Use ordinary

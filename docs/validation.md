@@ -32,7 +32,7 @@ command compiled out of production.
 
 ```sh
 make dmg
-sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.8.5.dmg
+sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.8.6.dmg
 ```
 
 The audit mounts the DMG read-only and expands the package. It checks the
@@ -94,3 +94,23 @@ writer authentication, reader authentication, and a buffer grant. Read-only
 installed driver property checks passed. The user confirmed audible music and
 two Disable/Enable cycles without errors; live logs recorded three successful
 grants. A subsequent login and the broader hardware checklist remain unverified.
+
+## Boot-time missing broker service (0.8.6)
+
+On 2026-11-11 at 11:22:36, launchd rejected the installed HAL writer's
+`org.soundvolumecontrol.broker.writer` lookup with error 3 (No such process).
+The driver logged an invalid broker connection and never retried it. At
+11:23:30 and 11:31:41 the broker authenticated readers with `writer available=0`;
+both requests exhausted the 20-second deadline. This is a service-registration
+race followed by a permanently stranded writer, not a reader signature failure.
+
+The writer now replaces invalid connections after a one-second delay, always
+applying the original broker signature requirement. Interrupted connections
+retain the existing restart path. Tests start a real driver fixture before the
+isolated broker is registered, wait for a confirmed invalidation, register the
+broker, and verify real PCM and read-only memory through the same writer process.
+The complete 0.8.6 update was installed on 2026-11-11. All three bundles
+report 0.8.6/build 18; live logs confirm writer authentication at 11:45:00,
+reader authentication with `writer available=1`, and a buffer grant at 11:45:02.
+Read-only installed audio-route checks passed. Audible playback is unverified;
+installed cold-boot acceptance still requires a reboot.

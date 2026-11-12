@@ -8,6 +8,12 @@ static _Atomic(SVCSharedAudio *) currentAudio;
 static _Atomic(unsigned) leases;
 static dispatch_queue_t writerQueue;
 static xpc_connection_t writerConnection;
+static char *writerService, *writerRequirement;
+static bool writerPrivileged;
+#ifdef SVC_SECURE_IPC_TESTING
+static _Atomic(unsigned) invalidations;
+unsigned SVCWriterTestInvalidations(void) { return atomic_load(&invalidations); }
+#endif
 
 SVCSharedAudio *SVCWriterAcquire(void) {
     atomic_fetch_add(&leases, 1);
@@ -37,31 +43,53 @@ static void Hello(void) {
 
 #ifdef SVC_SECURE_IPC_TESTING
 void SVCWriterTestRevoke(void) {
-    xpc_object_t event = xpc_dictionary_create(NULL, NULL, 0);
-    xpc_dictionary_set_string(event, "op", "test-revoke");
-    xpc_connection_send_message(writerConnection, event);
-    xpc_release(event);
+    dispatch_async(writerQueue, ^{
+        if (writerConnection == NULL) return;
+        xpc_object_t event = xpc_dictionary_create(NULL, NULL, 0);
+        xpc_dictionary_set_string(event, "op", "test-revoke");
+        xpc_connection_send_message(writerConnection, event);
+        xpc_release(event);
+    });
 }
 #endif
 
-bool SVCWriterConnect(const char *service, const char *requirement, bool privileged) {
-    if (writerConnection != NULL) return true;
-    writerQueue = dispatch_queue_create("org.soundvolumecontrol.writer", DISPATCH_QUEUE_SERIAL);
-    writerConnection = xpc_connection_create_mach_service(service, writerQueue,
-        privileged ? XPC_CONNECTION_MACH_SERVICE_PRIVILEGED : 0);
+static bool ConnectWriter(void);
+
+static void RetryWriter(void) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), writerQueue, ^{
+        if (!ConnectWriter()) RetryWriter();
+    });
+}
+
+// A connection invalidated before launchd registers the service cannot be reused.
+// All retries keep the original broker pin and run off the HAL render thread.
+static bool ConnectWriter(void) {
+    xpc_connection_t connection = xpc_connection_create_mach_service(writerService, writerQueue,
+        writerPrivileged ? XPC_CONNECTION_MACH_SERVICE_PRIVILEGED : 0);
+    writerConnection = connection;
     if (writerConnection == NULL) return false;
-    if (xpc_connection_set_peer_code_signing_requirement(writerConnection, requirement) != 0) {
+    if (xpc_connection_set_peer_code_signing_requirement(writerConnection, writerRequirement) != 0) {
         xpc_release(writerConnection);
         writerConnection = NULL;
         return false;
     }
     xpc_connection_set_event_handler(writerConnection, ^(xpc_object_t event) {
+        if (connection != writerConnection) return;
         if (xpc_get_type(event) == XPC_TYPE_ERROR) {
             Retire(atomic_exchange(&currentAudio, NULL));
             if (event == XPC_ERROR_CONNECTION_INTERRUPTED) {
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), writerQueue, ^{ Hello(); });
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), writerQueue, ^{
+                    if (connection == writerConnection) Hello();
+                });
             } else {
-                os_log_error(OS_LOG_DEFAULT, "SoundVolumeControl broker connection rejected or invalid");
+                os_log_error(OS_LOG_DEFAULT, "SoundVolumeControl broker connection rejected or invalid; retrying with fresh authentication");
+#ifdef SVC_SECURE_IPC_TESTING
+                atomic_fetch_add(&invalidations, 1);
+#endif
+                writerConnection = NULL;
+                xpc_connection_cancel(connection);
+                xpc_release(connection);
+                RetryWriter();
             }
             return;
         }
@@ -84,5 +112,20 @@ bool SVCWriterConnect(const char *service, const char *requirement, bool privile
     });
     xpc_connection_activate(writerConnection);
     Hello();
+    return true;
+}
+
+bool SVCWriterConnect(const char *service, const char *requirement, bool privileged) {
+    if (writerQueue != NULL) return true;
+    writerService = strdup(service);
+    writerRequirement = strdup(requirement);
+    if (writerService == NULL || writerRequirement == NULL) {
+        free(writerService); free(writerRequirement);
+        writerService = writerRequirement = NULL;
+        return false;
+    }
+    writerPrivileged = privileged;
+    writerQueue = dispatch_queue_create("org.soundvolumecontrol.writer", DISPATCH_QUEUE_SERIAL);
+    dispatch_async(writerQueue, ^{ if (!ConnectWriter()) RetryWriter(); });
     return true;
 }

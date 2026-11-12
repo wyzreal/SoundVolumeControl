@@ -184,6 +184,25 @@ int main(int argc, char **argv) {
         registered = YES;
         Check(Run(reader, @[readerName, requirements[0], @"reset"]) == 0,
               "persistent resets exhaust retries with error 54 instead of waiting for timeout");
+        Check(Run(@"/bin/launchctl", @[@"bootout", [domain stringByAppendingFormat:@"/%@", label]]) == 0,
+              "unregister service before cold-start reproduction");
+        registered = NO;
+        [writerTask terminate]; [writerTask waitUntilExit];
+        NSPipe *earlyOutput = [NSPipe pipe];
+        NSTask *earlyWriter = Start(writer, @[writerName, requirements[0]], earlyOutput);
+        NSString *invalidated = [[NSString alloc] initWithData:earlyOutput.fileHandleForReading.availableData
+                                                    encoding:NSUTF8StringEncoding];
+        Check([invalidated containsString:@"INVALIDATED"],
+              "HAL writer receives invalid connection before broker registration");
+        Check(earlyWriter.running, "HAL writer remains alive after invalidation");
+        resetArguments[6] = @"0";
+        resetConfiguration[@"ProgramArguments"] = resetArguments;
+        Check([resetConfiguration writeToFile:plist atomically:YES], "cold-start broker configuration");
+        Check(Run(@"/bin/launchctl", @[@"bootstrap", domain, plist]) == 0,
+              "register broker after writer connection became invalid");
+        registered = YES;
+        Check(Run(reader, @[readerName, requirements[0], @"read"]) == 0,
+              "same HAL writer reconnects after late broker registration and publishes PCM");
         puts("secure-ipc-tests: PASS (real XPC authentication and driver transport; no audio device changes)");
     }
     return 0;

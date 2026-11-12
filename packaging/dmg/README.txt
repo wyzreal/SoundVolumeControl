@@ -1,4 +1,4 @@
-SoundVolumeControl 0.8.5 development candidate
+SoundVolumeControl 0.8.6 development candidate
 ============================================
 
 INSTALL MANUALLY
@@ -53,5 +53,6 @@ This local build is ad-hoc signed, not Developer ID signed or notarized.
 macOS may require Control-click > Open or Privacy & Security approval.
 Install only from a trusted source. No independent security audit is claimed.
 
-0.8.5 retries transient startup connection resets (error 54) with fresh authentication.
+0.8.6 reconnects the driver if the broker service is unavailable during boot.
+It also retries transient reader startup connection resets (error 54).
 Installed login recovery still needs manual verification.

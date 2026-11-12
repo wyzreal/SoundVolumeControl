@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.6 — 2026-11-11
+
+- Recover when the HAL driver starts before launchd registers the broker's
+  Mach service. Invalid XPC connections are replaced with fresh connections
+  using the same broker signature pin; audio memory is retired on failure.
+- Add a cold-start integration regression that waits for actual writer
+  invalidation before registering the broker, then verifies PCM from the
+  same driver process.
+
 ## 0.8.5 — 2026-09-24
 
 - Retry startup connection resets (error 54) up to twice with fresh authenticated
