@@ -20,9 +20,11 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sysexits.h>
 #include <time.h>
 #include <unistd.h>
 #include <dispatch/dispatch.h>
+#include <os/log.h>
 
 #define SVC_FORWARDER_BUNDLE_ID "org.soundvolumecontrol.forwarder"
 
@@ -718,6 +720,7 @@ int main(int argc, const char *argv[]) {
             return EXIT_FAILURE;
         }
 
+        os_log_info(OS_LOG_DEFAULT, "SoundVolumeControl: waiting for authenticated driver buffer");
         context.secureReader = MapDriverAudio();
         context.sharedAudio = context.secureReader == NULL ? NULL : SVCReaderAudio(context.secureReader);
         if (context.sharedAudio == NULL) {
@@ -725,16 +728,23 @@ int main(int argc, const char *argv[]) {
             const char *detail = error == EACCES
                 ? "Authentication rejected. Install the matching app, driver, and broker together."
                 : error == EBUSY ? "Another audio helper is connected. Quit other copies of SoundVolumeControl."
-                : error == ETIMEDOUT ? "The audio service did not provide a buffer within 20 seconds. Try Enable again."
-                : error == ECONNRESET ? "The audio service disconnected during startup. Try Enable again."
+                : error == ETIMEDOUT ? "The audio service is still starting. The menu app will retry automatically."
+                : error == ECONNREFUSED ? "The audio service is unavailable. The menu app will retry automatically."
+                : error == ECONNRESET ? "The audio service repeatedly disconnected during startup. Check the installed components."
                 : "Invalid audio buffer response. Install the matching components together.";
             fprintf(stderr, "Driver buffer failed: %s (%d). %s\n", strerror(error), error, detail);
+            os_log_error(OS_LOG_DEFAULT, "SoundVolumeControl: driver buffer startup failed with error %{public}d", error);
             Cleanup(&context);
             CFRelease(physicalUIDRef);
             if (physicalNameRef != NULL) {
                 CFRelease(physicalNameRef);
             }
-            return EXIT_FAILURE;
+            // A cold launch can exceed this attempt's deadline while macOS is
+            // still starting/authenticating the broker. Let the menu app retry
+            // with a fresh helper while keeping the physical output selected.
+            // Exhausted resets can also mean remote signature rejection, so
+            // keep them fatal after SVCReaderOpen's existing bounded retries.
+            return error == ETIMEDOUT || error == ECONNREFUSED ? EX_TEMPFAIL : EXIT_FAILURE;
         }
         context.scratchCapacityFrames = kSVCSharedAudioCapacityFrames;
         context.stereoScratch = calloc(

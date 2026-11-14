@@ -1,6 +1,6 @@
 # SoundVolumeControl user guide
 
-Version 0.8.6 development candidate for Apple Silicon and macOS 14+.
+Version 0.8.7 development candidate for Apple Silicon and macOS 14+.
 
 Audio uses authenticated XPC and anonymous read-only memory. Installed playback
 and hardware reliability still need [validation](validation.md).
@@ -14,7 +14,7 @@ It stays in the menu bar and has no separate window or custom volume slider.
 ## Install from the DMG
 
 1. If an older copy is running, use its **Quit SoundVolumeControl** command.
-2. Open `SoundVolumeControl-0.8.6.dmg` from a trusted source.
+2. Open `SoundVolumeControl-0.8.7.dmg` from a trusted source.
 3. Double-click **Install SoundVolumeControl.pkg**.
 4. Follow Installer and enter an administrator password.
 5. The installer adds `SoundVolumeControl.app` to `/Applications`, installs the
@@ -59,7 +59,9 @@ menu says Enabled. The app does not provide another slider.
 
 Enable remembers the current real output, starts the lightweight helper, and
 waits for physical-output readiness, then makes Sound Volume the normal and
-system-sounds output. A failed startup times out after 25 seconds.
+system-sounds output. If macOS is still starting the audio service, the app
+retries automatically with a short delay, keeping the physical output active.
+Disable or Quit cancels the retries.
 
 Disable applies to the current session and restores the remembered real outputs
 before stopping the helper. Reopening the app enables volume control again. Quit
@@ -115,15 +117,16 @@ failures.
 
 ### Buffer connection errors
 
-Version 0.8.3 replaces a one-way request that could hide rejected signatures as
-error 60 with an authenticated reply. Cold buffer setup can take up to 20 seconds.
-The app keeps the physical output selected until the helper reports readiness.
+Each buffer attempt waits up to 20 seconds. Cold boot can delay macOS service
+launch and authentication beyond that deadline. Version 0.8.7 automatically
+starts another attempt and shows that it is retrying, with at most 15 seconds
+between attempts. The physical output stays selected until the helper is ready.
 
 - **Authentication rejected:** install all matching components from the same DMG.
 - **Another audio helper is connected:** quit other running copies of the app.
 - **Service disconnected:** try Enable again; if it repeats, report the error.
-- **No buffer within 20 seconds:** the service or driver did not complete setup;
-  report the macOS version and installed app version.
+- **Audio service still starting:** automatic retries are in progress. If it
+  persists, report the macOS version, installed app version, and status detail.
 
 ### Quit does not restore sound
 

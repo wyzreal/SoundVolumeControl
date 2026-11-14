@@ -1,6 +1,6 @@
 # Architecture: output-only audio with authenticated IPC
 
-Current architecture for 0.8.6. Development candidate, not an independently
+Current architecture for 0.8.7. Development candidate, not an independently
 audited or hardware-validated release.
 
 ## Audio and control paths
@@ -68,7 +68,14 @@ a compromised trusted Core Audio host, or a compromised authorized helper.
 Already delivered audio cannot be recalled. No independent audit is claimed.
 
 Enable waits for mapping and physical-output readiness before selecting Sound
-Volume. Startup times out after 25 seconds. Disable and Quit restore only
+Volume. Each startup attempt has a 25-second watchdog. Before readiness, buffer
+timeouts and unavailable-service failures start a fresh helper after a delay
+of 1, 2, 4, 8, then at most 15 seconds, while the physical route remains active.
+There is no fixed total boot deadline. Disable, Quit, or a new output choice
+cancels pending retries. Authentication/format failures and established-session
+loss still stop forwarding; exhausted startup resets remain fatal because XPC
+can also report remote signature rejection as a reset.
+Disable and Quit restore only
 selectors still pointing to Sound Volume, preserving external user changes.
 Normal Quit is cancelled if restoration fails. Broker/helper loss prompts
 restoration through supervision.

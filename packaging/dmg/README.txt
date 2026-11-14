@@ -1,4 +1,4 @@
-SoundVolumeControl 0.8.6 development candidate
+SoundVolumeControl 0.8.7 development candidate
 ============================================
 
 INSTALL MANUALLY
@@ -15,10 +15,11 @@ Reopen the app from Applications or Spotlight when closed.
 
 WHAT CHANGED
 
-0.8.3 fixes the buffer handshake so rejected connections do not silently wait
-for error 60. Cold setup has a 20-second buffer deadline and 25-second app
-startup deadline. Competing readers get an explicit error. Authentication,
-read-only memory, and safe route selection remain enforced.
+0.8.7 fixes the recurring cold-boot error 60: macOS can finish launching and
+authenticating the broker after the 20-second buffer deadline. The app now
+retries temporary startup timeouts automatically with delays capped at 15
+seconds, keeping the physical output active until ready. Disable and Quit
+cancel retries. Authentication and competing-reader errors remain explicit.
 
 The matching broker, driver, helper, and app must be installed together.
 
@@ -53,6 +54,6 @@ This local build is ad-hoc signed, not Developer ID signed or notarized.
 macOS may require Control-click > Open or Privacy & Security approval.
 Install only from a trusted source. No independent security audit is claimed.
 
-0.8.6 reconnects the driver if the broker service is unavailable during boot.
-It also retries transient reader startup connection resets (error 54).
+The driver also reconnects if the broker service is unavailable during boot.
+Startup reader resets have their existing bounded retries (error 54).
 Installed login recovery still needs manual verification.

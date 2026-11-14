@@ -32,7 +32,7 @@ command compiled out of production.
 
 ```sh
 make dmg
-sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.8.6.dmg
+sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.8.7.dmg
 ```
 
 The audit mounts the DMG read-only and expands the package. It checks the
@@ -76,6 +76,60 @@ Revocation stops future updates; previously delivered samples cannot be recalled
 Physical-device support, native controls, perceived volume, clicks, latency,
 restoration, real user switching, sleep/wake, long-run drift, CPU, memory, and
 energy use require installed measurements.
+
+## Cold launch exceeding an attempt deadline (0.8.7)
+
+The 2026-11-14 boot on macOS 27.2.1 (26B131) reproduced error 60 with matching
+installed 0.8.6/build 18 components and a healthy driver connection. The driver
+activated its writer
+connection at 12:17:46.267; the helper activated its reader at 12:17:52.963.
+The broker accepted the reader at 12:18:10.653, but completed reader
+authentication only at 12:18:14.495 and writer authentication at 12:18:14.504.
+The helper had already canceled its connection at 12:18:12.820 when its
+20-second attempt expired. No writer invalidation occurred. A later brief
+installed-helper run received its buffer immediately without replacing any
+component, and made no route change or test tone.
+
+This recurrence is a cold service-launch/authentication delay exceeding a fixed
+deadline. The 0.8.6 writer-reconnect fix addresses a different boot failure and
+cannot recover an app that has already disabled itself. Increasing the deadline
+would only move the same failure threshold.
+
+Version 0.8.7 retains bounded attempts and automatically replaces the helper
+after a pre-readiness ETIMEDOUT/ECONNREFUSED, with backoff capped at 15 seconds.
+The physical output is restored before another attempt. Disable, Quit, and
+output changes invalidate scheduled retries. Restoration failures, explicit
+denial, busy-reader errors, unsupported formats, and established-session loss
+remain terminal. Exhausted ECONNRESET also remains terminal because XPC can
+surface remote signature rejection that way.
+
+The isolated XPC regression pauses broker listener activation, observes an
+actual reader error 60, then releases startup and verifies real driver PCM and
+read-only memory through a fresh reader and the same HAL writer process.
+Mocked app tests cover automatic retries, late readiness, capped backoff, and
+cancellation without changing real audio devices. A real reboot remains a
+separate acceptance test.
+
+The final `make dmg` (including `make check`) and DMG audit passed on
+2026-11-14. The 0.8.7 DMG SHA-256 is
+`9785dab21da407599024b2db3dc55bc5bec9eb6fd1f7bb963847542a9952198c`.
+
+The matching update was installed on 2026-11-14 at 14:09. App, embedded helper,
+and driver report 0.8.7/build 19; installed executable bytes match the audited
+build, signatures pass, and read-only `audio-route-verify` passes.
+
+An installed recovery test then restored the saved physical outputs, stopped
+the app, and paused only its broker from 14:13:23 to 14:13:51 with automatic
+cleanup/resumption. The reopened helper logged error 60 at 14:13:43.683;
+the app scheduled its own retry at 14:13:43.698 and started a fresh helper at
+14:13:44.811. A read-only check at 23 seconds confirmed neither default output
+was Sound Volume. On broker resumption, the fresh reader authenticated and
+received a buffer at 14:13:51.440; normal and system-sounds outputs then both
+became Sound Volume automatically. The canceled old reader was rejected during
+deferred signature validation; the new reader authenticated successfully.
+No test tone was generated. This validates installed recovery beyond the
+20-second deadline; actual reboot and audible playback remain unverified for
+0.8.7.
 
 ## Intermittent startup correction (0.8.3)
 

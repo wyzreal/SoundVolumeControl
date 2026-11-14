@@ -6,6 +6,8 @@
 #include "../common/StartupTiming.h"
 
 #include <stdbool.h>
+#include <sysexits.h>
+#include <os/log.h>
 
 typedef NS_ENUM(NSInteger, SVCAppState) {
     SVCAppStateDisabled,
@@ -198,6 +200,7 @@ static NSArray<NSDictionary<NSString *, id> *> *SVCPhysicalOutputs(void) {
 @property(nonatomic, strong) NSMenuItem *loginMenuItem;
 @property(nonatomic, strong) NSMenuItem *outputMenuItem;
 @property(nonatomic, strong) NSTask *forwarderTask;
+@property(nonatomic, strong) NSTask *stoppingForwarderTask;
 @property(nonatomic, strong) NSPipe *forwarderPipe;
 @property(nonatomic, strong) NSMutableData *lineBuffer;
 @property(nonatomic, copy) NSString *physicalOutputName;
@@ -210,10 +213,18 @@ static NSArray<NSDictionary<NSString *, id> *> *SVCPhysicalOutputs(void) {
 @property(nonatomic) BOOL defaultOutputListenerInstalled;
 @property(nonatomic) BOOL defaultSystemListenerInstalled;
 @property(nonatomic) NSUInteger launchGeneration;
+@property(nonatomic) NSUInteger startupRetryDelay;
+@property(nonatomic) BOOL startupRetryPending;
+@property(nonatomic) BOOL forwarderReady;
 - (void)capturePhysicalDefaults;
 - (void)defaultDevicesDidChange;
 - (BOOL)launchForwarder;
 - (BOOL)selectSoundVolumeWithDetail:(NSString **)outDetail;
+- (void)scheduleAfterSeconds:(NSTimeInterval)seconds action:(dispatch_block_t)action;
+- (void)forwarderDidTerminateWithStatus:(int)status
+                               reason:(NSTaskTerminationReason)reason
+                           generation:(NSUInteger)generation;
+- (void)forwarderStartupTimedOutForGeneration:(NSUInteger)generation;
 @end
 
 static OSStatus SVCDefaultDeviceChanged(
@@ -308,12 +319,8 @@ static OSStatus SVCDefaultDeviceChanged(
     (void)notification;
     (void)[self restorePhysicalDefaults:NULL];
     self.quitting = YES;
-    ++self.launchGeneration;
     [self removeDefaultDeviceListeners];
-    self.forwarderPipe.fileHandleForReading.readabilityHandler = nil;
-    if (self.forwarderTask.running) {
-        [self.forwarderTask terminate];
-    }
+    [self stopForwarder];
 }
 
 - (void)installDefaultDeviceListeners {
@@ -610,7 +617,9 @@ static OSStatus SVCDefaultDeviceChanged(
             break;
         case SVCAppStateStarting:
             symbol = @"ellipsis.circle";
-            status = @"Enabling…";
+            status = self.startupRetryPending
+                ? @"Enabling — waiting for audio service; retrying…"
+                : @"Enabling…";
             break;
         case SVCAppStateWaiting:
             symbol = @"speaker.wave.2";
@@ -662,6 +671,24 @@ static OSStatus SVCDefaultDeviceChanged(
     if (self.quitting || ![self forwardingEnabled]) {
         return NO;
     }
+    NSString *restorationDetail = nil;
+    if (![self restorePhysicalDefaults:&restorationDetail]) {
+        self.errorDetail = restorationDetail.length > 0
+            ? restorationDetail : @"The physical output could not be restored.";
+        self.appState = SVCAppStateError;
+        [self updatePresentation];
+        return NO;
+    }
+    // Disable, a watchdog, or an output change may have stopped a helper that
+    // is still unwinding a system call. Preserve it across cancelled retries.
+    if (self.stoppingForwarderTask.running) {
+        self.appState = SVCAppStateStarting;
+        [self updatePresentation];
+        [self launchAfterDelay:1 waitingForTask:self.stoppingForwarderTask
+                   generation:self.launchGeneration];
+        return YES;
+    }
+    self.stoppingForwarderTask = nil;
     NSURL *helperURL = [[NSBundle mainBundle].bundleURL
         URLByAppendingPathComponent:
             @"Contents/Helpers/SoundVolumeForwarder.app/Contents/MacOS/"
@@ -686,6 +713,8 @@ static OSStatus SVCDefaultDeviceChanged(
     self.forwarderPipe = pipe;
     [self.lineBuffer setLength:0];
     self.errorDetail = nil;
+    self.startupRetryPending = NO;
+    self.forwarderReady = NO;
     self.appState = SVCAppStateStarting;
     [self updatePresentation];
 
@@ -707,25 +736,9 @@ static OSStatus SVCDefaultDeviceChanged(
     task.terminationHandler = ^(NSTask *terminatedTask) {
         dispatch_async(dispatch_get_main_queue(), ^{
             SVCAppDelegate *strongSelf = weakSelf;
-            if (strongSelf == nil || generation != strongSelf.launchGeneration) {
-                return;
-            }
-            strongSelf.forwarderPipe.fileHandleForReading.readabilityHandler = nil;
-            strongSelf.forwarderTask = nil;
-            strongSelf.forwarderPipe = nil;
-            if (strongSelf.quitting || ![strongSelf forwardingEnabled]) {
-                return;
-            }
-            if (strongSelf.errorDetail.length == 0) {
-                strongSelf.errorDetail = [NSString stringWithFormat:
-                    @"Audio helper stopped (status %d). Volume control is disabled.",
-                    terminatedTask.terminationStatus];
-            }
-            strongSelf.appState = SVCAppStateError;
-            [[NSUserDefaults standardUserDefaults]
-                setBool:NO forKey:@"forwardingEnabled"];
-            (void)[strongSelf restorePhysicalDefaults:NULL];
-            [strongSelf updatePresentation];
+            [strongSelf forwarderDidTerminateWithStatus:terminatedTask.terminationStatus
+                                                reason:terminatedTask.terminationReason
+                                            generation:generation];
         });
     };
 
@@ -739,22 +752,113 @@ static OSStatus SVCDefaultDeviceChanged(
         [self updatePresentation];
         return NO;
     }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, SVC_APP_STARTUP_SECONDS * NSEC_PER_SEC),
-                   dispatch_get_main_queue(), ^{
+    [self scheduleAfterSeconds:SVC_APP_STARTUP_SECONDS action:^{
         SVCAppDelegate *strongSelf = weakSelf;
-        if (strongSelf != nil && generation == strongSelf.launchGeneration
-            && !strongSelf.quitting && [strongSelf forwardingEnabled]
-            && strongSelf.appState != SVCAppStateForwarding) {
+        [strongSelf forwarderStartupTimedOutForGeneration:generation];
+    }];
+    return YES;
+}
+
+- (void)scheduleAfterSeconds:(NSTimeInterval)seconds action:(dispatch_block_t)action {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(seconds * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), action);
+}
+
+- (void)launchAfterDelay:(NSTimeInterval)delay
+         waitingForTask:(NSTask *)previousTask
+             generation:(NSUInteger)generation {
+    __weak SVCAppDelegate *weakSelf = self;
+    [self scheduleAfterSeconds:delay action:^{
+        SVCAppDelegate *strongSelf = weakSelf;
+        if (strongSelf == nil || generation != strongSelf.launchGeneration
+            || strongSelf.quitting || ![strongSelf forwardingEnabled]) {
+            return;
+        }
+        // A timed-out helper may still be finishing a blocking system call.
+        // Wait for it to exit so a replacement cannot compete for its reader.
+        if (previousTask.running) {
+            [strongSelf launchAfterDelay:1 waitingForTask:previousTask
+                             generation:generation];
+            return;
+        }
+        if (![strongSelf launchForwarder]) {
             [[NSUserDefaults standardUserDefaults]
                 setBool:NO forKey:@"forwardingEnabled"];
-            (void)[strongSelf restorePhysicalDefaults:NULL];
-            [strongSelf stopForwarder];
-            strongSelf.errorDetail = @"Audio startup timed out. Volume control is disabled.";
             strongSelf.appState = SVCAppStateError;
             [strongSelf updatePresentation];
         }
-    });
-    return YES;
+    }];
+}
+
+- (void)retryForwarderStartup {
+    NSTask *previousTask = self.forwarderTask != nil
+        ? self.forwarderTask : self.stoppingForwarderTask;
+    NSUInteger previousDelay = self.startupRetryDelay;
+    NSString *detail = nil;
+    BOOL restored = [self restorePhysicalDefaults:&detail];
+    [self stopForwarder];
+    if (!restored) {
+        [[NSUserDefaults standardUserDefaults]
+            setBool:NO forKey:@"forwardingEnabled"];
+        self.errorDetail = detail.length > 0 ? detail : @"The physical output could not be restored.";
+        self.appState = SVCAppStateError;
+        os_log_error(OS_LOG_DEFAULT, "SoundVolumeControl: startup retry stopped; physical output restoration failed");
+        [self updatePresentation];
+        return;
+    }
+    self.startupRetryDelay = previousDelay == 0 ? 1 : MIN(previousDelay * 2, 15);
+    if (self.errorDetail.length == 0) {
+        self.errorDetail = @"The audio service has not finished starting.";
+    }
+    self.startupRetryPending = YES;
+    self.appState = SVCAppStateStarting;
+    os_log_info(OS_LOG_DEFAULT, "SoundVolumeControl: audio service still starting; retrying in %{public}lu seconds",
+                (unsigned long)self.startupRetryDelay);
+    [self updatePresentation];
+    [self launchAfterDelay:self.startupRetryDelay waitingForTask:previousTask
+               generation:self.launchGeneration];
+}
+
+- (void)forwarderDidTerminateWithStatus:(int)status
+                               reason:(NSTaskTerminationReason)reason
+                           generation:(NSUInteger)generation {
+    if (generation != self.launchGeneration) return;
+    self.forwarderPipe.fileHandleForReading.readabilityHandler = nil;
+    self.forwarderTask = nil;
+    self.forwarderPipe = nil;
+    if (self.quitting || ![self forwardingEnabled]) return;
+    if (!self.forwarderReady && reason == NSTaskTerminationReasonExit
+        && status == EX_TEMPFAIL) {
+        [self retryForwarderStartup];
+        return;
+    }
+    [self stopForwarder];
+    if (self.errorDetail.length == 0) {
+        self.errorDetail = [NSString stringWithFormat:
+            @"Audio helper stopped (status %d). Volume control is disabled.", status];
+    }
+    os_log_error(OS_LOG_DEFAULT, "SoundVolumeControl: audio helper stopped with terminal status %{public}d", status);
+    self.appState = SVCAppStateError;
+    [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"forwardingEnabled"];
+    (void)[self restorePhysicalDefaults:NULL];
+    [self updatePresentation];
+}
+
+- (void)forwarderStartupTimedOutForGeneration:(NSUInteger)generation {
+    if (generation != self.launchGeneration || self.quitting
+        || ![self forwardingEnabled] || self.appState == SVCAppStateForwarding) {
+        return;
+    }
+    if (!self.forwarderReady) {
+        [self retryForwarderStartup];
+        return;
+    }
+    [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"forwardingEnabled"];
+    (void)[self restorePhysicalDefaults:NULL];
+    [self stopForwarder];
+    self.errorDetail = @"Audio startup timed out. Volume control is disabled.";
+    self.appState = SVCAppStateError;
+    [self updatePresentation];
 }
 
 - (void)consumeForwarderData:(NSData *)data {
@@ -811,6 +915,9 @@ static OSStatus SVCDefaultDeviceChanged(
                 [self stopForwarder];
                 self.errorDetail = detail;
                 self.appState = SVCAppStateError;
+            } else {
+                self.forwarderReady = YES;
+                self.startupRetryDelay = 0;
             }
         }
     } else if ([line containsString:@"Waiting for Sound Volume"]) {
@@ -828,19 +935,31 @@ static OSStatus SVCDefaultDeviceChanged(
                || [line containsString:@"is not installed"]
                || [line containsString:@"mismatch:"]) {
         self.errorDetail = line;
-        self.appState = SVCAppStateError;
+        // The exit status decides whether a startup error is transient. Keep
+        // startup state until then so device notifications cannot disable a
+        // pending retry merely because the physical output is still selected.
+        if (self.forwarderReady) self.appState = SVCAppStateError;
     }
     [self updatePresentation];
 }
 
 - (void)stopForwarder {
+    if (self.startupRetryPending) {
+        os_log_info(OS_LOG_DEFAULT, "SoundVolumeControl: pending audio startup retry cancelled");
+    }
     ++self.launchGeneration;
+    self.startupRetryDelay = 0;
+    self.startupRetryPending = NO;
+    self.forwarderReady = NO;
     self.forwarderPipe.fileHandleForReading.readabilityHandler = nil;
     NSTask *task = self.forwarderTask;
     self.forwarderTask = nil;
     self.forwarderPipe = nil;
     if (task.running) {
+        self.stoppingForwarderTask = task;
         [task terminate];
+    } else if (!self.stoppingForwarderTask.running) {
+        self.stoppingForwarderTask = nil;
     }
 }
 
@@ -854,25 +973,12 @@ static OSStatus SVCDefaultDeviceChanged(
         [self showErrorWithTitle:@"Could not change audio output" detail:detail];
         return;
     }
+    NSTask *previousTask = self.forwarderTask != nil
+        ? self.forwarderTask : self.stoppingForwarderTask;
     [self stopForwarder];
     self.appState = SVCAppStateStarting;
     [self updatePresentation];
-    NSUInteger generation = self.launchGeneration;
-    __weak SVCAppDelegate *weakSelf = self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
-                                 (int64_t)(1500 * NSEC_PER_MSEC)),
-                   dispatch_get_main_queue(), ^{
-        SVCAppDelegate *strongSelf = weakSelf;
-        if (strongSelf != nil
-            && generation == strongSelf.launchGeneration
-            && !strongSelf.quitting
-            && [strongSelf forwardingEnabled]) {
-            if (![strongSelf launchForwarder]) {
-                [[NSUserDefaults standardUserDefaults]
-                    setBool:NO forKey:@"forwardingEnabled"];
-            }
-        }
-    });
+    [self launchAfterDelay:1.5 waitingForTask:previousTask generation:self.launchGeneration];
 }
 
 - (void)toggleForwarding:(id)sender {

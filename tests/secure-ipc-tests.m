@@ -203,6 +203,30 @@ int main(int argc, char **argv) {
         registered = YES;
         Check(Run(reader, @[readerName, requirements[0], @"read"]) == 0,
               "same HAL writer reconnects after late broker registration and publishes PCM");
+        Check(Run(@"/bin/launchctl", @[@"bootout", [domain stringByAppendingFormat:@"/%@", label]]) == 0,
+              "unregister service before delayed broker activation reproduction");
+        registered = NO;
+        NSString *activationGate = [temporaryDirectory stringByAppendingPathComponent:@"activate-broker"];
+        [resetArguments addObject:activationGate];
+        resetConfiguration[@"ProgramArguments"] = resetArguments;
+        Check([resetConfiguration writeToFile:plist atomically:YES], "delayed broker activation configuration");
+        Check(Run(@"/bin/launchctl", @[@"bootstrap", domain, plist]) == 0,
+              "register broker with listener activation paused");
+        registered = YES;
+        Check(Run(@"/bin/launchctl", @[@"kickstart", [domain stringByAppendingFormat:@"/%@", label]]) == 0,
+              "start isolated broker before listener activation");
+        NSString *waitingMarker = [activationGate stringByAppendingString:@".waiting"];
+        for (unsigned attempt = 0; attempt < 1000 &&
+             ![[NSFileManager defaultManager] fileExistsAtPath:waitingMarker]; ++attempt) usleep(10000);
+        Check([[NSFileManager defaultManager] fileExistsAtPath:waitingMarker],
+              "broker startup is paused before it can authenticate queued peers");
+        Check(Run(reader, @[readerName, requirements[0], @"timeout"]) == 0,
+              "queued reader returns error 60 while healthy broker startup exceeds its deadline");
+        Check(earlyWriter.running, "same HAL writer survives the reader's cold-start timeout");
+        Check([[@"ready" dataUsingEncoding:NSUTF8StringEncoding] writeToFile:activationGate atomically:YES],
+              "release delayed broker listener activation after the timeout");
+        Check(Run(reader, @[readerName, requirements[0], @"read"]) == 0,
+              "fresh reader recovers PCM after cold-start timeout without replacing HAL writer");
         puts("secure-ipc-tests: PASS (real XPC authentication and driver transport; no audio device changes)");
     }
     return 0;

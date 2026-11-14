@@ -1,6 +1,6 @@
-# Developer guide — 0.8.6
+# Developer guide — 0.8.7
 
-All app/helper/driver bundles are 0.8.6/build 18. Native arm64, macOS 14+,
+All app/helper/driver bundles are 0.8.7/build 19. Native arm64, macOS 14+,
 system frameworks only. The fourth executable is a small XPC broker.
 
 ## Components
@@ -23,7 +23,7 @@ It is not linked into production. Old shm names remain only for migration cleanu
 ```sh
 make check
 make dmg
-sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.8.6.dmg
+sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.8.7.dmg
 ```
 
 Targets: driver-test, processor-test, shared-reader-test, volume-curve-test,
@@ -41,8 +41,11 @@ reconnect, frozen old mappings, and console revocation. The session event is
 simulated by a test-only command compiled out of production. This is not an
 installed HAL sandbox or real fast-user-switch acceptance test.
 
-Mocked app tests isolate preferences and check readiness, failure cleanup,
-stale output rejection, and safe Quit without touching audio devices.
+Mocked app tests isolate preferences and check readiness, delayed-service
+startup retries, cancellation, failure cleanup, stale output rejection, and safe
+Quit without touching audio devices. The helper returns EX_TEMPFAIL only for
+initial buffer ETIMEDOUT/ECONNREFUSED; exhausted resets remain fatal. App retries
+use fresh helpers, a generation guard, and delays capped at 15 seconds.
 
 ## Signing order
 

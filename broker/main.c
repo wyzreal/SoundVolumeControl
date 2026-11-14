@@ -178,19 +178,35 @@ int main(int argc, char **argv) {
     const char *writerRequirement = SVC_DRIVER_REQUIREMENT;
     const char *policy = SVC_BROKER_POLICY;
 #ifdef SVC_BROKER_TESTING
-    if (argc != 6 && argc != 7) return 64;
+    if (argc != 6 && argc != 7 && argc != 8) return 64;
     writerName = argv[1]; readerName = argv[2]; policy = argv[3];
     writerRequirement = argv[4]; testConsoleUID = (uid_t)strtoul(argv[5], NULL, 10);
-    if (argc == 7) testStartupResets = (unsigned)strtoul(argv[6], NULL, 10);
+    if (argc >= 7) testStartupResets = (unsigned)strtoul(argv[6], NULL, 10);
 #else
     (void)argv;
     if (argc != 1 || geteuid() != 0) return 64;
 #endif
     char *readerRequirement = ReadPolicy(policy);
     if (readerRequirement == NULL) { fputs("broker: invalid reader policy\n", stderr); return 1; }
+#ifdef SVC_BROKER_TESTING
+    if (argc == 8) {
+        // Deterministically model launchd/code-signature validation delaying
+        // listener activation past a reader's deadline. Never in production.
+        char *waiting = NULL;
+        if (asprintf(&waiting, "%s.waiting", argv[7]) < 0) return 1;
+        int marker = open(waiting, O_CREAT | O_EXCL | O_WRONLY, 0600);
+        free(waiting);
+        if (marker < 0) return 1;
+        close(marker);
+        unsigned attempts = 0;
+        while (access(argv[7], F_OK) != 0 && ++attempts < 3000) usleep(10000);
+        if (access(argv[7], F_OK) != 0) return 1;
+    }
+#endif
     queue = dispatch_queue_create("org.soundvolumecontrol.broker", DISPATCH_QUEUE_SERIAL);
     if (Listen(writerName, writerRequirement, true) == NULL ||
         Listen(readerName, readerRequirement, false) == NULL) return 1;
+    os_log(OS_LOG_DEFAULT, "SoundVolumeControl: broker listening; awaiting authenticated peers");
     sessionStore = SCDynamicStoreCreate(NULL, CFSTR("SoundVolumeControl broker"), SessionChanged, NULL);
     const void *key = CFSTR("State:/Users/ConsoleUser");
     CFArrayRef keys = CFArrayCreate(NULL, &key, 1, &kCFTypeArrayCallBacks);

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.7 — 2026-11-14
+
+- Fix recurring boot-time error 60 when macOS service launch/authentication
+  outlasts the buffer deadline. Keep each attempt bounded and automatically
+  retry temporary pre-readiness failures with fresh helpers and capped backoff,
+  retaining the physical output until ready.
+- Cancel pending recovery on Disable, Quit, and output changes. Keep explicit
+  authentication/busy/format errors and established-session loss terminal.
+- Add a deterministic delayed-broker XPC reproduction, app recovery/cancellation
+  coverage, and persisted startup diagnostics.
+
 ## 0.8.6 — 2026-11-11
 
 - Recover when the HAL driver starts before launchd registers the broker's

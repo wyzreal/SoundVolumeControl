@@ -1,4 +1,16 @@
-# Manual acceptance — 0.8.6 candidate
+# Manual acceptance — 0.8.7 candidate
+
+0.8.7 installed partial pass on 2026-11-14: all components report build 19,
+signatures and installed read-only audio checks pass. A controlled 28-second
+broker delay reproduced error 60 at 20 seconds; the app retried automatically,
+kept the physical outputs selected during the delay, and enabled both Sound
+Volume defaults after the broker resumed. No test tone was generated. Audible
+playback and an actual reboot still need acceptance. See the
+[dated evidence](validation.md).
+
+The earlier 2026-11-14 boot failed on 0.8.6: the helper timed out before macOS
+finished launching/authenticating the broker. The deterministic isolated XPC
+regression and installed delay test now cover that failure sequence.
 
 0.8.6 installed partial pass on 2026-11-11: the full package upgraded
 successfully; app/helper/driver report 0.8.6/build 18. Live logs at 11:45:00–02
@@ -31,7 +43,7 @@ to install software, switch outputs, or generate test sounds without a request.
 - Physical device/model/connection:
 - Normal output and system-sounds output before installation:
 - Physical nominal sample rate (must match 48 kHz):
-- App/helper/driver versions (expected 0.8.6/build 18):
+- App/helper/driver versions (expected 0.8.7/build 19):
 - DMG checksum/source (see [validation coverage](validation.md)):
 
 Keep System Settings > Sound > Output available for recovery. Use ordinary

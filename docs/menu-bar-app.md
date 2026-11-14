@@ -1,8 +1,8 @@
 # Menu-bar app
 
-- App: 0.8.6 (build 18), native arm64 development candidate
-- Embedded helper: 0.8.6 (build 18)
-- Driver: 0.8.6 (build 18)
+- App: 0.8.7 (build 19), native arm64 development candidate
+- Embedded helper: 0.8.7 (build 19)
+- Driver: 0.8.7 (build 19)
 - Small authenticated XPC broker, with no UI or audio processing
 - Minimum macOS: 14.0
 
@@ -43,11 +43,17 @@ Start at Login is separately controlled by
 6. After its ready acknowledgement, select Sound Volume as normal and system
    output; show **Enabled — physical device** after the active acknowledgement.
 
-Startup times out after 25 seconds. Changing physical output first restores
+Each startup attempt times out after 25 seconds. Temporary buffer timeouts and
+unavailable-service failures before readiness retry automatically, with delays
+of 1, 2, 4, 8, then at most 15 seconds. The menu shows the pending retry and
+keeps Enable intent until success, Disable, or Quit. Authentication, busy-reader,
+format errors, and established-session failures remain terminal.
+Changing physical output first restores
 the real defaults, then restarts the helper through the same readiness sequence.
 
-If any step fails, stop the helper, restore the saved real outputs, persist the
-disabled state, and show a concise error.
+On a terminal failure, stop the helper, restore the saved real outputs, persist
+the disabled state, and show a concise error. Pending retries are canceled by
+Disable, Quit, and output changes; restoration failure also stops recovery.
 
 ## Disable and Quit
 
