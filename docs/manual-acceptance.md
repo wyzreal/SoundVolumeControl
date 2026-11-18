@@ -1,8 +1,11 @@
 # Manual acceptance — 0.8.8 candidate
 
-0.8.8/build 20 installed acceptance is pending. Automated lifecycle regressions
-cover output-switch ordering and preserved Disable intent; audible playback,
-real device switching, and broader hardware reliability still need this checklist.
+0.8.8 installed partial pass on 2026-11-19: app, helper, and driver report
+build 20; installed binaries match the audited package, signatures and reader
+policy pass, and read-only audio checks pass. The app and helper are running
+with forwarding enabled. Automated lifecycle regressions cover output-switch
+ordering and preserved Disable intent; audible playback, real device switching,
+and broader hardware reliability still need this checklist.
 
 0.8.7 installed partial pass on 2026-11-14: all components report build 19,
 signatures and installed read-only audio checks pass. A controlled 28-second

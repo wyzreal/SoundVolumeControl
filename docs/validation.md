@@ -56,6 +56,15 @@ The audited DMG SHA-256 is
 `9686083b69fff23b24f3e138894f5ba8d3c24b19519cb4b301ef006fc17c3d1e`.
 Audible playback and real hardware switching remain manual acceptance items.
 
+The matching package was installed on 2026-11-19 after staging it outside
+Documents for privileged installer access. App, embedded helper, and driver
+report 0.8.8/build 20. Installed executable bytes and reader policy match the
+audited build; strict signature checks, reader pin verification, and read-only
+`audio-route-verify` pass. The app, helper, and broker are running, and the app's
+forwarding preference is enabled. No diagnostic tone or manual output switch
+was used for these checks; audible playback and hardware switching remain
+unverified for 0.8.8.
+
 ## Error 60 regression
 
 Installed 0.8.0 logs showed the broker rejecting the Apple-signed
