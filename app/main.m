@@ -208,6 +208,7 @@ static NSArray<NSDictionary<NSString *, id> *> *SVCPhysicalOutputs(void) {
 @property(nonatomic, copy) NSString *errorDetail;
 @property(nonatomic, copy) NSString *lastPhysicalDefaultUID;
 @property(nonatomic, copy) NSString *lastPhysicalSystemUID;
+@property(nonatomic, copy) NSString *startingPhysicalDefaultUID;
 @property(nonatomic) SVCAppState appState;
 @property(nonatomic) BOOL quitting;
 @property(nonatomic) BOOL defaultOutputListenerInstalled;
@@ -217,6 +218,7 @@ static NSArray<NSDictionary<NSString *, id> *> *SVCPhysicalOutputs(void) {
 @property(nonatomic) BOOL startupRetryPending;
 @property(nonatomic) BOOL forwarderReady;
 - (void)capturePhysicalDefaults;
+- (NSString *)currentPhysicalDefaultUID;
 - (void)defaultDevicesDidChange;
 - (BOOL)launchForwarder;
 - (BOOL)selectSoundVolumeWithDetail:(NSString **)outDetail;
@@ -369,21 +371,24 @@ static OSStatus SVCDefaultDeviceChanged(
     }
 }
 
-- (void)capturePhysicalDefaults {
+- (NSString *)currentPhysicalDefaultUID {
     AudioDeviceID output = SVCDefaultDevice(
         kAudioHardwarePropertyDefaultOutputDevice
     );
-    if (SVCIsPhysicalOutput(output)) {
-        NSString *uid = SVCCopyString(
-            output,
-            SVCAddress(kAudioDevicePropertyDeviceUID,
-                       kAudioObjectPropertyScopeGlobal)
-        );
-        if (uid.length > 0) {
-            self.lastPhysicalDefaultUID = uid;
-            [[NSUserDefaults standardUserDefaults]
-                setObject:uid forKey:@"lastPhysicalDefaultUID"];
-        }
+    if (!SVCIsPhysicalOutput(output)) return nil;
+    return SVCCopyString(
+        output,
+        SVCAddress(kAudioDevicePropertyDeviceUID,
+                   kAudioObjectPropertyScopeGlobal)
+    );
+}
+
+- (void)capturePhysicalDefaults {
+    NSString *uid = [self currentPhysicalDefaultUID];
+    if (uid.length > 0) {
+        self.lastPhysicalDefaultUID = uid;
+        [[NSUserDefaults standardUserDefaults]
+            setObject:uid forKey:@"lastPhysicalDefaultUID"];
     }
 
     AudioDeviceID system = SVCDefaultDevice(
@@ -408,23 +413,23 @@ static OSStatus SVCDefaultDeviceChanged(
     if (self.quitting || ![self forwardingEnabled]) {
         return;
     }
-    if (self.appState == SVCAppStateStarting
-        || self.appState == SVCAppStateWaiting) {
+    NSString *uid = [self currentPhysicalDefaultUID];
+    if (uid.length == 0) return;
+    // Restoring a real default for startup generates its own notifications.
+    // Only a different physical output should replace an in-flight helper.
+    if (!self.forwarderReady
+        && (self.appState == SVCAppStateStarting
+         || self.appState == SVCAppStateWaiting)
+        && [uid isEqualToString:self.startingPhysicalDefaultUID]) {
         return;
     }
-    AudioDeviceID virtualDevice = SVCDeviceForUID(@SVC_DEVICE_UID);
-    AudioDeviceID currentOutput = SVCDefaultDevice(
-        kAudioHardwarePropertyDefaultOutputDevice
-    );
-    if (virtualDevice != kAudioObjectUnknown
-        && currentOutput != virtualDevice) {
-        [[NSUserDefaults standardUserDefaults]
-            setBool:NO forKey:@"forwardingEnabled"];
-        (void)[self restorePhysicalDefaults:NULL];
-        [self stopForwarder];
-        self.appState = SVCAppStateDisabled;
-        [self updatePresentation];
-    }
+    // A choice in macOS Sound settings supersedes any previous explicit
+    // destination. Automatic follows the newly selected physical default.
+    [[NSUserDefaults standardUserDefaults] setObject:@""
+                                              forKey:@"physicalDeviceUID"];
+    self.physicalOutputName = nil;
+    self.physicalOutputUID = nil;
+    [self restartForwarderForDefaultChange:YES];
 }
 
 - (NSString *)savedForwarderPhysicalUID {
@@ -715,6 +720,7 @@ static OSStatus SVCDefaultDeviceChanged(
     self.errorDetail = nil;
     self.startupRetryPending = NO;
     self.forwarderReady = NO;
+    self.startingPhysicalDefaultUID = [self currentPhysicalDefaultUID];
     self.appState = SVCAppStateStarting;
     [self updatePresentation];
 
@@ -827,6 +833,10 @@ static OSStatus SVCDefaultDeviceChanged(
     self.forwarderTask = nil;
     self.forwarderPipe = nil;
     if (self.quitting || ![self forwardingEnabled]) return;
+    // The helper can exit before either its final log or the Core Audio
+    // notification reaches the main queue. Recover the new route either way.
+    [self defaultDevicesDidChange];
+    if (generation != self.launchGeneration) return;
     if (!self.forwarderReady && reason == NSTaskTerminationReasonExit
         && status == EX_TEMPFAIL) {
         [self retryForwarderStartup];
@@ -907,6 +917,9 @@ static OSStatus SVCDefaultDeviceChanged(
         }
     } else if ([line isEqualToString:@"Forwarder ready."]) {
         if (!self.quitting && [self forwardingEnabled]) {
+            NSUInteger generation = self.launchGeneration;
+            [self defaultDevicesDidChange];
+            if (generation != self.launchGeneration) return;
             NSString *detail = nil;
             if (![self selectSoundVolumeWithDetail:&detail]) {
                 [[NSUserDefaults standardUserDefaults]
@@ -925,11 +938,7 @@ static OSStatus SVCDefaultDeviceChanged(
     } else if ([line containsString:@"Forwarding is active"]) {
         self.appState = SVCAppStateForwarding;
     } else if ([line containsString:@"no longer selected"]) {
-        [[NSUserDefaults standardUserDefaults]
-            setBool:NO forKey:@"forwardingEnabled"];
-        (void)[self restorePhysicalDefaults:NULL];
-        [self stopForwarder];
-        self.appState = SVCAppStateDisabled;
+        [self defaultDevicesDidChange];
     } else if ([line containsString:@"failed:"]
                || [line hasPrefix:@"No eligible"]
                || [line containsString:@"is not installed"]
@@ -965,17 +974,33 @@ static OSStatus SVCDefaultDeviceChanged(
 
 - (void)restartForwarder:(id)sender {
     (void)sender;
+    [self restartForwarderForDefaultChange:NO];
+}
+
+- (void)restartForwarderForDefaultChange:(BOOL)defaultChanged {
     if (![self forwardingEnabled]) {
         return;
     }
     NSString *detail = nil;
     if (![self restorePhysicalDefaults:&detail]) {
+        // A failed menu change must keep the current helper alive while Sound
+        // Volume may still be the normal output. An external change has already
+        // selected a real output, so cancel that failed recovery completely.
+        if (defaultChanged) {
+            [[NSUserDefaults standardUserDefaults]
+                setBool:NO forKey:@"forwardingEnabled"];
+            [self stopForwarder];
+            self.errorDetail = detail;
+            self.appState = SVCAppStateError;
+            [self updatePresentation];
+        }
         [self showErrorWithTitle:@"Could not change audio output" detail:detail];
         return;
     }
     NSTask *previousTask = self.forwarderTask != nil
         ? self.forwarderTask : self.stoppingForwarderTask;
     [self stopForwarder];
+    self.startingPhysicalDefaultUID = [self currentPhysicalDefaultUID];
     self.appState = SVCAppStateStarting;
     [self updatePresentation];
     [self launchAfterDelay:1.5 waitingForTask:previousTask generation:self.launchGeneration];
@@ -1023,6 +1048,7 @@ static OSStatus SVCDefaultDeviceChanged(
     [[NSUserDefaults standardUserDefaults] setObject:uid
                                               forKey:@"physicalDeviceUID"];
     self.physicalOutputName = nil;
+    self.physicalOutputUID = nil;
     [self restartForwarder:nil];
     [self rebuildPhysicalOutputMenu];
 }

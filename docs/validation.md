@@ -15,7 +15,7 @@ they do not install the driver, change audio routes, or play audio.
 | --- | --- |
 | Driver | Output-only topology, volume/mute properties, stream state, final WriteMix publication. |
 | Audio processing | Square-law gain, smoothing, underruns, gaps, frame integrity, and restart behavior. |
-| App lifecycle | Readiness handshake, startup failure, stale helper messages, restoration decisions, and safe Quit. |
+| App lifecycle | Readiness handshake, startup failure, output-switch event ordering, preserved Disable intent, stale helper messages, restoration decisions, and safe Quit. |
 | Anonymous memory | Matching PCM across mappings; kernel rejection of write escalation. |
 | XPC integration | Real driver-generated PCM between separate signed processes; exact reader/broker pins; wrong identities and roles denied. |
 | Writer identity | Real Apple HAL helper accepted when present; unrelated Apple executable and ad-hoc identity impersonation denied. |
@@ -32,13 +32,29 @@ command compiled out of production.
 
 ```sh
 make dmg
-sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.8.7.dmg
+sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.8.8.dmg
 ```
 
 The audit mounts the DMG read-only and expands the package. It checks the
 payload against local binaries, versions, icon, scripts, signatures, and both
 directions of the broker/helper signature pins. It does not run the installer.
 Build products and machine-specific checksums are excluded from source control.
+
+## Output-switch state preservation (0.8.8)
+
+On 2026-11-18, all release check targets and the DMG audit passed for
+0.8.8/build 20. The local Xcode license was pending, so the build invoked the
+installed Command Line Tools directly, with an explicit SDK and matching
+inspection tools. Isolated IPC tests ran outside the agent sandbox.
+
+Lifecycle regressions cover device-notification, helper-message, and helper-exit
+ordering; output changes before and after readiness; successive destination
+changes; restoration failures; and an explicit Disable preserved across macOS
+and app-menu output changes. They do not change real audio devices.
+
+The audited DMG SHA-256 is
+`9686083b69fff23b24f3e138894f5ba8d3c24b19519cb4b301ef006fc17c3d1e`.
+Audible playback and real hardware switching remain manual acceptance items.
 
 ## Error 60 regression
 

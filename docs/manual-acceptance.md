@@ -1,4 +1,8 @@
-# Manual acceptance — 0.8.7 candidate
+# Manual acceptance — 0.8.8 candidate
+
+0.8.8/build 20 installed acceptance is pending. Automated lifecycle regressions
+cover output-switch ordering and preserved Disable intent; audible playback,
+real device switching, and broader hardware reliability still need this checklist.
 
 0.8.7 installed partial pass on 2026-11-14: all components report build 19,
 signatures and installed read-only audio checks pass. A controlled 28-second
@@ -43,7 +47,7 @@ to install software, switch outputs, or generate test sounds without a request.
 - Physical device/model/connection:
 - Normal output and system-sounds output before installation:
 - Physical nominal sample rate (must match 48 kHz):
-- App/helper/driver versions (expected 0.8.7/build 19):
+- App/helper/driver versions (expected 0.8.8/build 20):
 - DMG checksum/source (see [validation coverage](validation.md)):
 
 Keep System Settings > Sound > Output available for recovery. Use ordinary
@@ -75,9 +79,14 @@ acceptance gate even if the app shows Enabled or unit tests passed.
 
 ## Reliability pass (only after the first pass)
 
-- [ ] Change physical output in the menu and externally in System Settings.
+- [ ] Change physical output in the menu and externally in System Settings;
+  volume control stays enabled and follows the new device after readiness.
+- [ ] Change output again while Enabling; the latest destination wins.
+- [ ] Disable, then choose a device in the app's Output Device menu; volume
+  control stays disabled. Changing outputs in macOS also keeps it disabled.
+  Choose Enable; forwarding starts for the selected device.
 - [ ] Disconnect/reconnect the display; verify safe output and explicitly note
-  whether re-enabling was required. Automatic re-enable is not guaranteed.
+  whether macOS selected another physical output and forwarding followed it.
 - [ ] Sleep/wake; separately test display sleep and computer sleep.
 - [ ] Test helper/broker exit and restart under controlled conditions; verify
   restoration rather than leaving an inactive virtual default.

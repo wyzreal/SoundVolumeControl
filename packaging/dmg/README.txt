@@ -1,4 +1,4 @@
-SoundVolumeControl 0.8.7 development candidate
+SoundVolumeControl 0.8.8 development candidate
 ============================================
 
 INSTALL MANUALLY
@@ -15,10 +15,13 @@ Reopen the app from Applications or Spotlight when closed.
 
 WHAT CHANGED
 
-0.8.7 fixes the recurring cold-boot error 60: macOS can finish launching and
-authenticating the broker after the 20-second buffer deadline. The app now
-retries temporary startup timeouts automatically with delays capped at 15
-seconds, keeping the physical output active until ready. Disable and Quit
+0.8.8 keeps volume control enabled when macOS switches to a new physical
+output, including during startup. A previous explicit destination is replaced
+by the new default. Switching outputs in macOS or the app preserves an
+intentional Disable; only Enable or the next app launch enables it again.
+
+Temporary cold-start timeouts still retry automatically with delays capped at
+15 seconds, keeping the physical output active until ready. Disable and Quit
 cancel retries. Authentication and competing-reader errors remain explicit.
 
 The matching broker, driver, helper, and app must be installed together.

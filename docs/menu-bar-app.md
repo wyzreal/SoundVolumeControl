@@ -1,8 +1,8 @@
 # Menu-bar app
 
-- App: 0.8.7 (build 19), native arm64 development candidate
-- Embedded helper: 0.8.7 (build 19)
-- Driver: 0.8.7 (build 19)
+- App: 0.8.8 (build 20), native arm64 development candidate
+- Embedded helper: 0.8.8 (build 20)
+- Driver: 0.8.8 (build 20)
 - Small authenticated XPC broker, with no UI or audio processing
 - Minimum macOS: 14.0
 
@@ -30,6 +30,9 @@ slider, EQ control, recorder, permission screen, or advanced audio panel.
 The app starts its embedded helper and selects Sound Volume after readiness.
 Users can choose Disable for the current session; a previous disable or helper
 failure does not prevent the next launch from enabling volume control.
+While enabled, choosing a new physical output in macOS keeps volume control
+enabled and restarts the helper for that destination after readiness. Choosing
+an output while disabled leaves volume control disabled.
 Start at Login is separately controlled by
 `SMAppService.mainAppService`.
 
@@ -72,6 +75,14 @@ Automatic chooses the current real default when possible, then the saved helper
 destination, then the best available non-virtual output. HDMI/DisplayPort and
 USB/Thunderbolt are preferred over built-in, Bluetooth, and AirPlay. Explicit
 selection stores only the device UID and restarts the helper when enabled.
+Selecting an output preserves the enabled or disabled state. An external
+physical-output change while enabled supersedes an explicit selection and
+returns the app to Automatic.
+Duplicate notifications during startup do not restart the helper; a different
+physical default replaces the pending attempt. Helper route-loss messages and
+exits use the same recovery path, so notification order cannot disable volume
+control during an output switch. An explicit Disable stays in effect until
+Enable or the next launch, including when outputs change.
 
 ## Privacy
 

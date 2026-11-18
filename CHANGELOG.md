@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.8 — 2026-11-18
+
+- Keep volume control enabled when macOS switches to a new physical output,
+  including switches during startup. Follow the new default instead of a
+  previously pinned destination, with readiness and helper cleanup checks.
+- Preserve an explicit Disable when switching outputs in macOS or the app.
+  Volume control enables again only with Enable or the next app launch.
+- Cover output changes across device notifications, helper messages, and helper
+  exit ordering with isolated lifecycle regressions.
+
 ## 0.8.7 — 2026-11-14
 
 - Fix recurring boot-time error 60 when macOS service launch/authentication

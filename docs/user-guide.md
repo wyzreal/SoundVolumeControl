@@ -1,6 +1,6 @@
 # SoundVolumeControl user guide
 
-Version 0.8.7 development candidate for Apple Silicon and macOS 14+.
+Version 0.8.8 development candidate for Apple Silicon and macOS 14+.
 
 Audio uses authenticated XPC and anonymous read-only memory. Installed playback
 and hardware reliability still need [validation](validation.md).
@@ -14,7 +14,7 @@ It stays in the menu bar and has no separate window or custom volume slider.
 ## Install from the DMG
 
 1. If an older copy is running, use its **Quit SoundVolumeControl** command.
-2. Open `SoundVolumeControl-0.8.7.dmg` from a trusted source.
+2. Open `SoundVolumeControl-0.8.8.dmg` from a trusted source.
 3. Double-click **Install SoundVolumeControl.pkg**.
 4. Follow Installer and enter an administrator password.
 5. The installer adds `SoundVolumeControl.app` to `/Applications`, installs the
@@ -33,6 +33,10 @@ it does not establish that the IPC buffer is private.
 ## Normal use
 
 The app enables volume control on every launch, including Start at Login.
+While enabled, it follows a new physical output selected in macOS without
+requiring Enable again. Choosing a device under **Output Device** also preserves
+the current enabled or disabled state. If you chose Disable, changing outputs
+leaves volume control disabled until Enable or the next app launch.
 A speaker icon in the menu bar shows its
 state:
 
@@ -94,8 +98,9 @@ The virtual stream is 48 kHz stereo. The physical device must report the same
 positive nominal rate; otherwise startup reports a sample-rate mismatch and
 does not enable the route. Small clock-drift correction is not general sample-rate
 conversion. Device reconnect, sleep/wake, real user switching, and long-run
-performance still need testing. After failure the app may disable forwarding;
-automatic re-enable is not guaranteed.
+performance still need testing. Output switches restart forwarding automatically
+while enabled. Other helper failures can still disable forwarding and require
+Enable again.
 
 ## Troubleshooting
 
@@ -118,8 +123,8 @@ failures.
 ### Buffer connection errors
 
 Each buffer attempt waits up to 20 seconds. Cold boot can delay macOS service
-launch and authentication beyond that deadline. Version 0.8.7 automatically
-starts another attempt and shows that it is retrying, with at most 15 seconds
+launch and authentication beyond that deadline. Versions 0.8.7 and later
+automatically start another attempt and show that they are retrying, with at most 15 seconds
 between attempts. The physical output stays selected until the helper is ready.
 
 - **Authentication rejected:** install all matching components from the same DMG.
