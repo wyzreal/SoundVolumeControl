@@ -19,6 +19,10 @@ static id TestStandardDefaults(id self, SEL selector) {
 @property NSUInteger stops;
 @property NSUInteger alerts;
 @property(nonatomic, copy) NSString *mockPhysicalDefaultUID;
+@property(nonatomic, copy) NSDictionary<NSString *, NSNumber *> *mockVolumeSupport;
+@property BOOL mockNoSoundVolumeOutput;
+@property NSUInteger directSelections;
+@property(nonatomic, copy) NSString *directPhysicalUID;
 @end
 
 @implementation SVCTestDelegate
@@ -27,6 +31,20 @@ static id TestStandardDefaults(id self, SEL selector) {
 - (void)removeDefaultDeviceListeners {}
 - (void)rebuildPhysicalOutputMenu {}
 - (NSString *)currentPhysicalDefaultUID { return self.mockPhysicalDefaultUID; }
+- (BOOL)soundVolumeIsDefaultOutput {
+    return self.mockPhysicalDefaultUID == nil && !self.mockNoSoundVolumeOutput;
+}
+- (SVCVolumeSupport)volumeSupportForOutputUID:(NSString *)uid {
+    NSNumber *support = self.mockVolumeSupport[uid == nil ? @"" : uid];
+    return support == nil ? SVCVolumeSupportFixed : support.integerValue;
+}
+- (BOOL)selectDirectOutputWithUID:(NSString *)uid detail:(NSString **)detail {
+    ++self.directSelections;
+    self.directPhysicalUID = uid;
+    if (detail != NULL) *detail = @"test direct route failure";
+    if (self.routeSucceeds) self.mockPhysicalDefaultUID = uid;
+    return self.routeSucceeds;
+}
 - (BOOL)selectSoundVolumeWithDetail:(NSString **)detail {
     ++self.selections;
     if (detail != NULL) *detail = @"test route failure";
@@ -72,6 +90,9 @@ static id TestStandardDefaults(id self, SEL selector) {
 }
 - (BOOL)launchForwarder {
     if (self.stoppingForwarderTask.running) return [super launchForwarder];
+    NSString *physicalUID = nil;
+    if (![self prepareOutputForForwarding:&physicalUID detail:NULL]) return NO;
+    if (physicalUID == nil) return YES;
     ++self.launches;
     ++self.launchGeneration;
     self.forwarderReady = NO;
@@ -79,9 +100,8 @@ static id TestStandardDefaults(id self, SEL selector) {
     self.errorDetail = nil;
     self.appState = SVCAppStateStarting;
     self.startingPhysicalDefaultUID = [self currentPhysicalDefaultUID];
-    NSString *selectedUID = [self selectedPhysicalUID];
-    self.launchedPhysicalUID = selectedUID.length > 0
-        ? selectedUID : [self currentPhysicalDefaultUID];
+    self.launchedPhysicalUID = physicalUID;
+    self.physicalOutputUID = physicalUID;
     return YES;
 }
 - (void)scheduleAfterSeconds:(NSTimeInterval)seconds action:(dispatch_block_t)action {
@@ -109,6 +129,7 @@ static SVCRetryTestDelegate *StartRetryFixture(void) {
     [testDefaults setBool:YES forKey:@"forwardingEnabled"];
     [testDefaults setObject:@"" forKey:@"physicalDeviceUID"];
     SVCRetryTestDelegate *delegate = [SVCRetryTestDelegate new];
+    delegate.mockPhysicalDefaultUID = @"fixed-output";
     assert([delegate launchForwarder]);
     return delegate;
 }
@@ -503,6 +524,166 @@ static void TestSourceChangeFailureBoundaries(void) {
     }
 }
 
+static NSDictionary<NSString *, NSNumber *> *NativePolicySupport(void) {
+    return @{
+        @"native-output": @(SVCVolumeSupportNative),
+        @"other-native-output": @(SVCVolumeSupportNative),
+        @"fixed-output": @(SVCVolumeSupportFixed),
+        @"unknown-output": @(SVCVolumeSupportUnknown),
+    };
+}
+
+static void TestNativeLaunchAndSelection(void) {
+    [testDefaults setBool:YES forKey:@"forwardingEnabled"];
+    [testDefaults setObject:@"" forKey:@"physicalDeviceUID"];
+    // Exercise the production launch preflight. A native output must return
+    // before looking for or launching the bundled helper.
+    SVCTestDelegate *delegate = [SVCTestDelegate new];
+    delegate.routeSucceeds = YES;
+    delegate.mockVolumeSupport = NativePolicySupport();
+    delegate.mockPhysicalDefaultUID = @"native-output";
+    assert([delegate launchForwarder]);
+    assert([delegate forwardingEnabled]);
+    assert(delegate.appState == SVCAppStateNativeVolume);
+    assert(delegate.forwarderTask == nil && delegate.selections == 0);
+    assert(delegate.directSelections == 0 && delegate.alerts == 0);
+    assert([delegate.currentPhysicalDefaultUID isEqualToString:@"native-output"]);
+
+    NSMenuItem *output = [NSMenuItem new];
+    output.representedObject = @"other-native-output";
+    [delegate selectPhysicalOutput:output];
+    assert([delegate forwardingEnabled]);
+    assert(delegate.appState == SVCAppStateNativeVolume);
+    assert(delegate.directSelections == 1 && delegate.selections == 0);
+    assert([delegate.directPhysicalUID isEqualToString:@"other-native-output"]);
+    assert([delegate.currentPhysicalDefaultUID isEqualToString:@"other-native-output"]);
+    NSUInteger generation = delegate.launchGeneration;
+    [delegate defaultDevicesDidChange];
+    assert(delegate.launchGeneration == generation && delegate.directSelections == 1);
+
+    [delegate toggleForwarding:nil];
+    delegate.mockPhysicalDefaultUID = @"fixed-output";
+    [delegate defaultDevicesDidChange];
+    output.representedObject = @"fixed-output";
+    [delegate selectPhysicalOutput:output];
+    assert(![delegate forwardingEnabled] && delegate.appState == SVCAppStateDisabled);
+    assert(delegate.forwarderTask == nil && delegate.selections == 0);
+    assert(delegate.directSelections == 1);
+}
+
+static void TestNativeAndFixedTransitions(void) {
+    // Returning to native control cancels a pending launch, an established
+    // helper, or its delayed startup retry without losing Enable intent.
+    for (NSUInteger stage = 0; stage < 3; ++stage) {
+        [testDefaults setBool:YES forKey:@"forwardingEnabled"];
+        [testDefaults setObject:@"" forKey:@"physicalDeviceUID"];
+        SVCRetryTestDelegate *delegate = [SVCRetryTestDelegate new];
+        delegate.mockVolumeSupport = NativePolicySupport();
+        delegate.mockPhysicalDefaultUID = @"native-output";
+        assert([delegate launchForwarder]);
+        assert(delegate.launches == 0 && delegate.appState == SVCAppStateNativeVolume);
+
+        delegate.mockPhysicalDefaultUID = @"fixed-output";
+        [delegate defaultDevicesDidChange];
+        assert([delegate forwardingEnabled] && delegate.scheduled.count == 1);
+        assert(delegate.appState == SVCAppStateStarting);
+        SVCStoppingTestTask *activeTask = nil;
+        if (stage > 0) {
+            [delegate runNextScheduled];
+            assert(delegate.launches == 1);
+            assert([delegate.launchedPhysicalUID isEqualToString:@"fixed-output"]);
+            if (stage == 1) {
+                [delegate consumeForwarderLine:@"Forwarder ready."];
+                [delegate consumeForwarderLine:@"Forwarding is active."];
+                activeTask = [SVCStoppingTestTask new];
+                activeTask.active = YES;
+                delegate.forwarderTask = activeTask;
+            } else {
+                TemporaryStartupExit(delegate);
+                assert(delegate.startupRetryPending && delegate.scheduled.count == 1);
+            }
+        }
+        NSUInteger staleGeneration = delegate.launchGeneration;
+        delegate.mockPhysicalDefaultUID = @"native-output";
+        [delegate defaultDevicesDidChange];
+        assert([delegate forwardingEnabled] && !delegate.forwarderReady);
+        assert(delegate.appState == SVCAppStateNativeVolume);
+        assert(delegate.launchGeneration != staleGeneration);
+        assert(delegate.forwarderTask == nil && !delegate.startupRetryPending);
+        if (activeTask != nil) assert(activeTask.terminations == 1);
+        [delegate forwarderDidTerminateWithStatus:1
+                                          reason:NSTaskTerminationReasonExit
+                                      generation:staleGeneration];
+        [delegate forwarderStartupTimedOutForGeneration:staleGeneration];
+        while (delegate.scheduled.count > 0) [delegate runNextScheduled];
+        assert(delegate.appState == SVCAppStateNativeVolume);
+        assert([delegate forwardingEnabled] && delegate.launches == (stage == 0 ? 0 : 1));
+
+        [delegate toggleForwarding:nil];
+        delegate.mockPhysicalDefaultUID = @"fixed-output";
+        [delegate defaultDevicesDidChange];
+        assert(![delegate forwardingEnabled] && delegate.appState == SVCAppStateDisabled);
+        assert(delegate.scheduled.count == 0);
+    }
+}
+
+static void TestUnknownVolumeSupport(void) {
+    [testDefaults setBool:YES forKey:@"forwardingEnabled"];
+    [testDefaults setObject:@"" forKey:@"physicalDeviceUID"];
+    SVCTestDelegate *missing = [SVCTestDelegate new];
+    missing.routeSucceeds = YES;
+    missing.mockNoSoundVolumeOutput = YES;
+    missing.mockVolumeSupport = @{@"": @(SVCVolumeSupportUnknown)};
+    assert([missing launchForwarder]);
+    assert([missing forwardingEnabled] && missing.appState == SVCAppStateNoEligibleOutput);
+    assert(missing.forwarderTask == nil && missing.selections == 0);
+
+    SVCRetryTestDelegate *delegate = [SVCRetryTestDelegate new];
+    delegate.mockVolumeSupport = NativePolicySupport();
+    delegate.mockPhysicalDefaultUID = @"unknown-output";
+    assert([delegate launchForwarder]);
+    assert([delegate forwardingEnabled] && delegate.appState == SVCAppStateNoEligibleOutput);
+    assert(delegate.launches == 0 && delegate.scheduled.count == 0);
+    [delegate defaultDevicesDidChange];
+    assert(delegate.launches == 0 && delegate.appState == SVCAppStateNoEligibleOutput);
+    delegate.mockVolumeSupport = @{@"unknown-output": @(SVCVolumeSupportFixed)};
+    [delegate defaultDevicesDidChange]; // Recheck a transient failure on the same UID.
+    assert(delegate.scheduled.count == 1 && delegate.launches == 0);
+    [delegate runNextScheduled];
+    assert(delegate.launches == 1);
+    assert([delegate.launchedPhysicalUID isEqualToString:@"unknown-output"]);
+
+    // A retry on the unchanged physical default preserves an explicit choice
+    // whose volume capabilities were temporarily unavailable.
+    [testDefaults setObject:@"unknown-output" forKey:@"physicalDeviceUID"];
+    delegate = [SVCRetryTestDelegate new];
+    delegate.mockVolumeSupport = NativePolicySupport();
+    delegate.mockPhysicalDefaultUID = @"native-output";
+    assert([delegate launchForwarder]);
+    assert(delegate.appState == SVCAppStateNoEligibleOutput);
+    assert([delegate.currentPhysicalDefaultUID isEqualToString:@"native-output"]);
+    delegate.mockVolumeSupport = @{@"unknown-output": @(SVCVolumeSupportFixed)};
+    [delegate defaultDevicesDidChange];
+    assert([delegate.selectedPhysicalUID isEqualToString:@"unknown-output"]);
+    assert(delegate.scheduled.count == 1 && delegate.launches == 0);
+    [delegate runNextScheduled];
+    assert([delegate.launchedPhysicalUID isEqualToString:@"unknown-output"]);
+}
+
+static void TestCapabilityChangeBeforeReadiness(void) {
+    for (NSNumber *support in @[@(SVCVolumeSupportNative), @(SVCVolumeSupportUnknown)]) {
+        SVCRetryTestDelegate *delegate = StartPhysicalFixture(NO);
+        delegate.mockVolumeSupport = @{@"first-output": support};
+        [delegate consumeForwarderData:[@"Forwarder ready.\nForwarding is active.\n"
+            dataUsingEncoding:NSUTF8StringEncoding]];
+        assert([delegate forwardingEnabled] && !delegate.forwarderReady);
+        assert(delegate.selections == 0 && delegate.scheduled.count == 0);
+        assert(delegate.lineBuffer.length == 0);
+        assert(delegate.appState == (support.integerValue == SVCVolumeSupportNative
+            ? SVCAppStateNativeVolume : SVCAppStateNoEligibleOutput));
+    }
+}
+
 int main(void) {
     @autoreleasepool {
         NSString *suite = [NSString stringWithFormat:
@@ -548,10 +729,14 @@ int main(void) {
         TestSwitchingDuringStartup();
         TestOutputSelectionAndDisable();
         TestSourceChangeFailureBoundaries();
+        TestNativeLaunchAndSelection();
+        TestNativeAndFixedTransitions();
+        TestUnknownVolumeSupport();
+        TestCapabilityChangeBeforeReadiness();
 
         [testDefaults removePersistentDomainForName:suite];
         method_setImplementation(method, original);
-        puts("app-lifecycle-tests: PASS (late startup recovery, source switching, output selection, bounded backoff, cancellation, safe routing, ready handshake, stale output, safe Quit)");
+        puts("app-lifecycle-tests: PASS (native volume policy, late startup recovery, source switching, output selection, bounded backoff, cancellation, safe routing, ready handshake, stale output, safe Quit)");
     }
     return 0;
 }

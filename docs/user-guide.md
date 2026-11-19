@@ -32,16 +32,19 @@ it does not establish that the IPC buffer is private.
 
 ## Normal use
 
-The app enables volume control on every launch, including Start at Login.
-While enabled, it follows a new physical output selected in macOS without
-requiring Enable again. Choosing a device under **Output Device** also preserves
-the current enabled or disabled state. If you chose Disable, changing outputs
-leaves volume control disabled until Enable or the next app launch.
+Automatic mode is on at launch, including Start at Login. The app starts for
+fixed-volume outputs such as displays that macOS cannot turn up or down. If
+macOS can adjust the selected output directly, the app leaves that route in
+place and stays ready for the next output change. If you choose Disable,
+automatic mode stays off until Enable or the next app launch.
 A speaker icon in the menu bar shows its
 state:
 
 - **Enabled — device name**: routing and helper readiness were acknowledged;
   this status alone does not prove that non-silent music reaches the speakers.
+- **Using macOS volume control**: the output already has native volume control.
+- **Waiting for a compatible output**: there is no output that the app can
+  currently confirm needs software volume control.
 - **Disabled**: macOS is using a normal physical output.
 - **Enabling…**: the helper is starting.
 - **Error — detail**: enabling failed and the app attempted to restore a real
@@ -61,14 +64,14 @@ menu says Enabled. The app does not provide another slider.
 
 ## Enable, Disable, and Quit
 
-Enable remembers the current real output, starts the lightweight helper, and
-waits for physical-output readiness, then makes Sound Volume the normal and
-system-sounds output. If macOS is still starting the audio service, the app
-retries automatically with a short delay, keeping the physical output active.
-Disable or Quit cancels the retries.
+Enable arms automatic mode. For a fixed-volume device, the app remembers the
+current real output and starts the helper. After the helper is ready, it makes
+Sound Volume the normal and system-sounds output. If macOS is still starting
+the audio service, the app retries automatically with a short delay while the
+physical output stays active. Disable or Quit cancels the retries.
 
 Disable applies to the current session and restores the remembered real outputs
-before stopping the helper. Reopening the app enables volume control again. Quit
+before stopping the helper. Reopening the app restores automatic mode. Quit
 uses the same restoration path. If restoration cannot be verified, the app
 shows an error instead of silently leaving the Mac routed to an inactive virtual
 device. An unexpected helper exit also triggers restoration.

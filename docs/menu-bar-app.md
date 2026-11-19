@@ -26,13 +26,14 @@ slider, EQ control, recorder, permission screen, or advanced audio panel.
 
 ## Default behavior
 
-`forwardingEnabled` is reset to true on every launch, including Start at Login.
-The app starts its embedded helper and selects Sound Volume after readiness.
-Users can choose Disable for the current session; a previous disable or helper
-failure does not prevent the next launch from enabling volume control.
-While enabled, choosing a new physical output in macOS keeps volume control
-enabled and restarts the helper for that destination after readiness. Choosing
-an output while disabled leaves volume control disabled.
+`forwardingEnabled` records whether automatic mode is armed. It resets to true
+on launch, including Start at Login. The app checks the physical destination
+for writable output volume controls. It leaves a device with native volume
+control on the direct macOS route and starts the helper only for a confirmed
+fixed-volume device. If Core Audio cannot determine the capability, the app
+waits for a usable output. Changing outputs rechecks the new destination.
+Choosing Disable pauses automatic mode for the current session, including
+when outputs change.
 Start at Login is separately controlled by
 `SMAppService.mainAppService`.
 
@@ -40,8 +41,8 @@ Start at Login is separately controlled by
 
 1. Resolve Sound Volume by UID.
 2. Capture the current real normal and system-output UIDs.
-3. Resolve the selected or automatic physical destination.
-4. Launch the nested helper with that optional destination UID.
+3. Resolve the selected or automatic physical destination and check its volume controls.
+4. For a fixed-volume destination, launch the nested helper with its device UID.
 5. Wait for the helper to map the ring and start physical output-only IO.
 6. After its ready acknowledgement, select Sound Volume as normal and system
    output; show **Enabled — physical device** after the active acknowledgement.
@@ -51,8 +52,8 @@ unavailable-service failures before readiness retry automatically, with delays
 of 1, 2, 4, 8, then at most 15 seconds. The menu shows the pending retry and
 keeps Enable intent until success, Disable, or Quit. Authentication, busy-reader,
 format errors, and established-session failures remain terminal.
-Changing physical output first restores
-the real defaults, then restarts the helper through the same readiness sequence.
+Changing physical output restores the real defaults, then restarts the helper
+if the new output has fixed volume.
 
 On a terminal failure, stop the helper, restore the saved real outputs, persist
 the disabled state, and show a concise error. Pending retries are canceled by
@@ -71,13 +72,12 @@ is distinguished from an unexpected exit by launch generation and task state.
 
 ## Output selection
 
-Automatic chooses the current real default when possible, then the saved helper
-destination, then the best available non-virtual output. HDMI/DisplayPort and
-USB/Thunderbolt are preferred over built-in, Bluetooth, and AirPlay. Explicit
-selection stores only the device UID and restarts the helper when enabled.
-Selecting an output preserves the enabled or disabled state. An external
-physical-output change while enabled supersedes an explicit selection and
-returns the app to Automatic.
+Automatic follows the current physical default. An explicit menu selection
+stores the device UID. When automatic mode is armed, a native-volume selection
+routes directly to that device and a fixed-volume selection starts the helper.
+An external physical-output change supersedes an explicit selection and returns
+the app to Automatic. Selecting an output while disabled saves the choice
+without arming automatic mode.
 Duplicate notifications during startup do not restart the helper; a different
 physical default replaces the pending attempt. Helper route-loss messages and
 exits use the same recovery path, so notification order cannot disable volume

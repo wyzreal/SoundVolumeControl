@@ -34,8 +34,9 @@ The installer requests administrator access, installs all matching components,
 briefly restarts Core Audio, and opens the app. Builds are locally ad-hoc signed
 and are not notarized.
 
-Volume control enables automatically on launch and follows output changes in
-macOS while enabled. An intentional Disable stays disabled when outputs change.
+The app checks the output on launch and whenever it changes. It steps in for
+fixed-volume devices and leaves outputs with native macOS volume control on
+their direct route. An intentional Disable stays in effect when outputs change.
 Use the normal macOS volume controls.
 Choose **Disable** or **Quit** to restore the physical output. To uninstall,
 run **Uninstall SoundVolumeControl.command** from the DMG.

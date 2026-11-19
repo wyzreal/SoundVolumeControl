@@ -7,7 +7,9 @@ INSTALL MANUALLY
 2. Open “Install SoundVolumeControl.pkg” and follow Installer prompts.
 3. The installer adds the app to Applications, the output-only driver, and a
    small authenticated connection broker. Core Audio briefly restarts.
-4. The app opens enabled and selects Sound Volume only after output is ready.
+4. The app checks the selected output on launch and whenever it changes. It
+   selects Sound Volume for fixed-volume devices after the helper is ready.
+   Devices with native volume control keep using the direct macOS output.
 5. Use its menu for Enable/Disable, Output Device, Start at Login, About, Quit.
    Use normal macOS volume controls; there is no extra slider.
 
