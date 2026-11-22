@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0 — 2026-11-22
+
+- Package build 22 as the next stable GitHub release so the installed 0.8.9
+  updater can discover a newer release and open its installer download page.
+- Clarify menu-bar status, installation, and the hardware acceptance checks
+  planned for 1.0.
+
 ## 0.8.9 — 2026-11-22
 
 - Use software volume for fixed-volume outputs and leave native macOS volume

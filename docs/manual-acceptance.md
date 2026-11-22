@@ -1,14 +1,12 @@
-# Manual acceptance — 0.8.9 candidate
+# Manual acceptance — 0.9.0 candidate
 
-## Current verification
+## Historical verification
 
 On 2026-11-22, the 0.8.9/build 21 package passed the full automated suite and
 DMG audit. The installed components matched the audited build, the app was
 running, and read-only Core Audio checks passed. The live update client offered
 0.8.9 to a 0.8.8 version input and reported 0.8.9 as current. Audible playback
-and real hardware recovery for 0.8.9 remain open. See [validation](validation.md).
-
-## Historical verification
+and hardware recovery were pending for that build. See [validation](validation.md).
 
 On 2026-11-19, installed 0.8.8 components reported build 20 and matched the
 audited package. Signatures, reader policy, and read-only audio checks passed.
@@ -58,7 +56,7 @@ to install software, switch outputs, or generate test sounds without a request.
 - Physical device/model/connection:
 - Normal output and system-sounds output before installation:
 - Physical nominal sample rate (software routing requires 48 kHz):
-- App/helper/driver versions (expected 0.8.9/build 21):
+- App/helper/driver versions (expected 0.9.0/build 22):
 - DMG checksum/source (see [validation coverage](validation.md)):
 
 Keep System Settings > Sound > Output available for recovery. Use ordinary
@@ -143,5 +141,5 @@ Quit the menu app first; only one authenticated reader can connect. The helper
 must match the installed signature policy. No tone is generated in normal use.
 
 Record the final decision as PASS, FAIL, or NOT RUN and link a dated validation
-record. The published 0.8.9 package is ad-hoc signed and hardware acceptance
+record. The 0.9.0 package is ad-hoc signed and hardware acceptance
 remains open.

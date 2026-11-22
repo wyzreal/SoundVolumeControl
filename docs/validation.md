@@ -1,7 +1,7 @@
 # Validation
 
-Version 0.8.9 is published on GitHub. Automated checks cover audio processing,
-authentication, packaging, routing behavior, and update checks. Use the
+Automated checks cover audio processing, authentication, packaging, routing
+behavior, and update checks. Use the
 [manual checklist](manual-acceptance.md) to record audible playback and
 hardware reliability for the 1.0 decision.
 
@@ -54,7 +54,7 @@ command compiled out of production.
 
 ```sh
 make dmg
-sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.8.9.dmg
+sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.9.0.dmg
 ```
 
 The audit mounts the DMG read-only and expands the package. It checks the

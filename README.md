@@ -8,8 +8,8 @@ Native macOS volume control for fixed-volume HDMI, DisplayPort, and USB-C audio.
 Use the normal volume keys, Control Center slider, mute, and volume HUD with a
 small menu-bar app.
 
-**0.8.9 (build 21)** is the latest release. Download the DMG and SHA-256
-checksum from GitHub. [GitHub release](https://github.com/wyzreal/SoundVolumeControl/releases/tag/v0.8.9)
+**0.9.0 (build 22)** is available on GitHub with its DMG and SHA-256 checksum.
+[GitHub release](https://github.com/wyzreal/SoundVolumeControl/releases/tag/v0.9.0)
 
 Requires Apple Silicon and macOS 14+. Software volume supports physical
 outputs running at 48 kHz stereo. Installed playback and hardware validation
@@ -26,7 +26,7 @@ are pending for 1.0. [Manual acceptance checklist](docs/manual-acceptance.md)
 
 ## Install
 
-Open `SoundVolumeControl-0.8.9.dmg` and run **Install SoundVolumeControl.pkg**.
+Open `SoundVolumeControl-0.9.0.dmg` and run **Install SoundVolumeControl.pkg**.
 The installer requests administrator access, installs the matching app, driver,
 broker, and signature policy, briefly restarts Core Audio, and opens the app.
 The DMG contains ad-hoc-signed components. [Installation guide](docs/user-guide.md#install-from-the-dmg)
@@ -49,7 +49,7 @@ make check
 make dmg
 ```
 
-The build writes the matching installer to `dist/SoundVolumeControl-0.8.9.dmg`.
+The build writes the matching installer to `dist/SoundVolumeControl-0.9.0.dmg`.
 
 ## How it works
 
