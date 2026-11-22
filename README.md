@@ -15,8 +15,8 @@ Requires Apple Silicon, macOS 14+, and a physical output running at 48 kHz stere
 ## Features
 
 - Native system volume and mute, with smoothed software attenuation.
-- Enable/Disable, output selection, and optional Start at Login.
-- Output restoration before Disable or Quit, with startup readiness checks.
+- Background routing, output selection, and Start at Login by default.
+- Startup readiness checks and physical output restoration before Quit.
 - Output-only audio driver and authenticated, anonymous shared memory.
 - No microphone or system-recording APIs, custom mixer, EQ, or network service.
 
@@ -36,9 +36,9 @@ and are not notarized.
 
 The app checks the output on launch and whenever it changes. It steps in for
 fixed-volume devices and leaves outputs with native macOS volume control on
-their direct route. An intentional Disable stays in effect when outputs change.
+their direct route. Routing runs automatically while the app is open.
 Use the normal macOS volume controls.
-Choose **Disable** or **Quit** to restore the physical output. To uninstall,
+Choose **Quit** to restore the physical output. To uninstall,
 run **Uninstall SoundVolumeControl.command** from the DMG.
 
 Always install the app, driver, broker, and signature policy together.

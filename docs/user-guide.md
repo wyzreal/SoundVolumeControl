@@ -32,52 +32,20 @@ it does not establish that the IPC buffer is private.
 
 ## Normal use
 
-Automatic mode is on at launch, including Start at Login. The app starts for
-fixed-volume outputs such as displays that macOS cannot turn up or down. If
-macOS can adjust the selected output directly, the app leaves that route in
-place and stays ready for the next output change. If you choose Disable,
-automatic mode stays off until Enable or the next app launch.
-A speaker icon in the menu bar shows its
-state:
+SoundVolumeControl runs in the background whenever it is open. Devices
+with native volume control stay on the direct macOS route. For fixed-volume
+devices, the app automatically starts software volume control after the
+helper is ready. Use the normal macOS volume keys, mute key, and Control
+Center slider in both cases.
 
-- **Enabled — device name**: routing and helper readiness were acknowledged;
-  this status alone does not prove that non-silent music reaches the speakers.
-- **Using macOS volume control**: the output already has native volume control.
-- **Waiting for a compatible output**: there is no output that the app can
-  currently confirm needs software volume control.
-- **Disabled**: macOS is using a normal physical output.
-- **Enabling…**: the helper is starting.
-- **Error — detail**: enabling failed and the app attempted to restore a real
-  output.
+The speaker menu offers **Output Device**, **Start at Login**, About, and
+Quit. **Automatic** follows the macOS output. Choose a specific device in
+the menu to use it as the destination.
 
-The menu contains:
-
-- **Enable** or **Disable** — one action whose name reflects what it will do.
-- **Output Device** — Automatic is recommended; select a device only when the
-  automatic choice is wrong.
-- **Start at Login** — uses macOS Service Management.
-- **About SoundVolumeControl**.
-- **Quit SoundVolumeControl**.
-
-Use the standard volume keys, keyboard mute key, or Control Center while the
-menu says Enabled. The app does not provide another slider.
-
-## Enable, Disable, and Quit
-
-Enable arms automatic mode. For a fixed-volume device, the app remembers the
-current real output and starts the helper. After the helper is ready, it makes
-Sound Volume the normal and system-sounds output. If macOS is still starting
-the audio service, the app retries automatically with a short delay while the
-physical output stays active. Disable or Quit cancels the retries.
-
-Disable applies to the current session and restores the remembered real outputs
-before stopping the helper. Reopening the app restores automatic mode. Quit
-uses the same restoration path. If restoration cannot be verified, the app
-shows an error instead of silently leaving the Mac routed to an inactive virtual
-device. An unexpected helper exit also triggers restoration.
-
-If the app has been closed, reopen it from `/Applications`, Spotlight, or
-Launchpad.
+On the first launch of this version, the app asks macOS to start it at login.
+You can change this from **Start at Login** or System Settings. **Quit**
+restores the physical outputs and stops the helper. Reopen the app from
+Applications, Spotlight, or Launchpad when needed.
 
 ## Volume behavior
 
@@ -101,22 +69,18 @@ The virtual stream is 48 kHz stereo. The physical device must report the same
 positive nominal rate; otherwise startup reports a sample-rate mismatch and
 does not enable the route. Small clock-drift correction is not general sample-rate
 conversion. Device reconnect, sleep/wake, real user switching, and long-run
-performance still need testing. Output switches restart forwarding automatically
-while enabled. Other helper failures can still disable forwarding and require
-Enable again.
+performance still need testing. The app reevaluates the route on output changes.
+Startup timeouts retry automatically. Other helper errors are recorded in the
+system log.
 
 ## Troubleshooting
 
-### Enabled but there is no sound
+### There is no sound
 
-1. Open the menu and confirm it says **Enabled — expected device**.
-2. Under **Output Device**, choose the actual HDMI/display/USB-C target rather
-   than Automatic.
-3. Choose Disable, then Enable.
-4. Confirm the physical display or receiver is not muted and uses the expected
-   input.
-5. If the problem persists, Quit so the physical output is restored and record
-   the macOS version, output-device name, and whether the menu showed an error.
+1. Under **Output Device**, choose the HDMI, DisplayPort, or USB-C target.
+2. Confirm the display or receiver uses the expected input and is unmuted.
+3. If the problem persists, quit and reopen the app. Record the macOS version,
+   output-device name, and any SoundVolumeControl errors from Console.
 
 For a controlled development test, also report whether music remained audible,
 whether the shared output callback advanced, and whether the explicit test tone
@@ -127,20 +91,19 @@ failures.
 
 Each buffer attempt waits up to 20 seconds. Cold boot can delay macOS service
 launch and authentication beyond that deadline. Versions 0.8.7 and later
-automatically start another attempt and show that they are retrying, with at most 15 seconds
+automatically start another attempt, with at most 15 seconds
 between attempts. The physical output stays selected until the helper is ready.
 
 - **Authentication rejected:** install all matching components from the same DMG.
 - **Another audio helper is connected:** quit other running copies of the app.
-- **Service disconnected:** try Enable again; if it repeats, report the error.
+- **Service disconnected:** quit and reopen the app. Report recurring errors.
 - **Audio service still starting:** automatic retries are in progress. If it
   persists, report the macOS version, installed app version, and status detail.
 
 ### Quit does not restore sound
 
 Open System Settings > Sound > Output and select a real device immediately.
-Then reopen SoundVolumeControl and use Disable once so it can refresh its saved
-route. Do not uninstall the driver while Sound Volume is still selected.
+Then reopen SoundVolumeControl so it can refresh its saved route. Do not uninstall the driver while Sound Volume is still selected.
 
 ### macOS asks for microphone access
 

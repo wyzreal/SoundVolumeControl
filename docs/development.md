@@ -42,7 +42,7 @@ simulated by a test-only command compiled out of production. This is not an
 installed HAL sandbox or real fast-user-switch acceptance test.
 
 Mocked app tests isolate preferences and check readiness, delayed-service
-startup retries, output-switch event ordering, preserved Disable intent,
+startup and crash retries, output-switch event ordering, automatic routing,
 cancellation, failure cleanup, stale output rejection, and safe Quit without
 touching audio devices. The helper returns EX_TEMPFAIL only for
 initial buffer ETIMEDOUT/ECONNREFUSED; exhausted resets remain fatal. App retries
@@ -74,7 +74,8 @@ Preinstall quits the old app, refuses replacement while the virtual output
 remains a default, and unloads the broker. Postinstall verifies signatures,
 normalizes broker/policy ownership and modes, loads the broker, restarts Core
 Audio, clears old public buffers, and opens the app as the console user.
-An existing Start at Login preference is preserved.
+The installer preserves existing registration. The app requests login
+registration on its first launch with the new defaults.
 
 The DMG uninstaller verifies restoration, unloads the broker, moves app/broker
 files to Trash, removes the driver, and restarts Core Audio. Use the complete
@@ -83,7 +84,7 @@ DMG workflow to avoid mismatched identities and orphaned services.
 ## Installed validation
 
 After manual installation, `make audio-route-verify` is read-only. Test music, native
-keys/Control Center, 60%, mute, Disable, Quit, reopen, helper/broker failure,
+keys/Control Center, 60%, mute, Quit, reopen, helper/broker failure,
 user switching, display reconnect, sleep/wake, and sustained playback.
 
 Optional audible diagnostic (only intentionally): quit the app, then run the

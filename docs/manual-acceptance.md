@@ -63,31 +63,28 @@ diagnosis. Do not uninstall while Sound Volume remains selected.
 
 - [ ] Install the matching DMG manually; record any Installer or Gatekeeper error.
 - [ ] Reopen from Applications; the menu icon appears without a Dock window.
-- [ ] Start at Login is separately configurable; enabling it is optional.
-- [ ] Enable completes, selects Sound Volume, and identifies the correct real output.
+- [ ] First launch requests Start at Login and later changes to that setting persist.
+- [ ] A fixed-volume output automatically selects Sound Volume after helper readiness.
 - [ ] Existing music remains audible; starting a new playback app also works.
 - [ ] No microphone/system-recording permission or unexpected privacy indicator.
 - [ ] Control Center slider, Volume Up/Down keys, and native HUD behave correctly.
 - [ ] 60% remains usable; compare several levels including near zero and 100%.
 - [ ] Native mute silences actual output; unmute restores it without a stuck state.
 - [ ] No duplicate/dry audio, feedback, obvious clipping, clicks, or excessive latency.
-- [ ] Disable restores normal output AND system-sounds output; music continues.
-- [ ] Enable again, then Quit; both outputs are restored and the helper stops.
-- [ ] Disable, Quit, then reopen; volume control enables automatically.
-- [ ] With Start at Login on, log out and back in after disabling; volume control
-  enables automatically once the helper is ready.
+- [ ] Quit restores normal output and system-sounds output and stops the helper.
+- [ ] Reopen and verify automatic volume control resumes.
+- [ ] With Start at Login on, log out and back in and verify automatic routing.
 
 Record pass/fail and observations for each item. A failure blocks this first
-acceptance gate even if the app shows Enabled or unit tests passed.
+acceptance gate even if unit tests passed.
 
 ## Reliability pass (only after the first pass)
 
-- [ ] Change physical output in the menu and externally in System Settings;
-  volume control stays enabled and follows the new device after readiness.
-- [ ] Change output again while Enabling; the latest destination wins.
-- [ ] Disable, then choose a device in the app's Output Device menu; volume
-  control stays disabled. Changing outputs in macOS also keeps it disabled.
-  Choose Enable; forwarding starts for the selected device.
+- [ ] Switch between native and fixed-volume devices through the menu and
+  System Settings. Verify direct routing on native devices and software
+  volume on fixed-volume devices, with no routing prompts.
+- [ ] Change output again while the helper is starting and verify the latest
+  destination wins.
 - [ ] Disconnect/reconnect the display; verify safe output and explicitly note
   whether macOS selected another physical output and forwarding followed it.
 - [ ] Sleep/wake; separately test display sleep and computer sleep.
@@ -95,7 +92,7 @@ acceptance gate even if the app shows Enabled or unit tests passed.
   restoration rather than leaving an inactive virtual default.
 - [ ] Lock/unlock, logout/login, and real fast-user switching; verify revocation,
   no continued old-session audio access, and expected recovery behavior.
-- [ ] Test Start at Login after explicit opt-in, and reopening after reboot.
+- [ ] Test Start at Login across reboot and verify that turning it off is respected.
 - [ ] Test mismatched/unsupported sample rates: clear failure and safe output,
   not silent success. Do not assume the clock-drift correction resamples formats.
 - [ ] Run sustained playback; record duration, CPU/RAM, dropouts, latency, and drift.
@@ -108,7 +105,7 @@ From the repository, `make audio-route-verify` reads driver properties only.
 The commands `audio-route-exercise` and `audio-route-watch-temporary-default` do change
 controls/routes and must be deliberately selected, not used as read-only probes.
 
-For an error report include versions, target device, exact menu error, whether
+For an error report include versions, target device, any Console errors, whether
 the real output works directly, what was playing, when audio stopped, and which
 restoration steps succeeded. Do not attach private audio recordings.
 

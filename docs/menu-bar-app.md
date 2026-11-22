@@ -12,77 +12,47 @@ Spotlight, or Launchpad.
 
 ## Menu
 
-The menu is intentionally small:
+The speaker icon stays constant. Its menu offers **Output Device**,
+**Start at Login**, About, and Quit.
 
-- a non-clickable current status;
-- one dynamic **Enable** or **Disable** command;
-- **Output Device** with Automatic and explicit physical choices;
-- **Start at Login**;
-- About;
-- Quit.
+## Automatic routing
 
-There is no “Use volume now” command, duplicate enabled state, custom volume
-slider, EQ control, recorder, permission screen, or advanced audio panel.
+The app checks the physical destination for writable output volume controls
+at launch and when the default output changes. A device with native volume
+control uses the direct macOS route. For a confirmed fixed-volume device,
+the app starts the helper while the physical route remains active. Once the
+helper has mapped the ring and started physical output IO, the app selects
+Sound Volume as the normal and system-sounds output. If the device capability
+is unknown, the app waits for a usable output. Routing changes run in the
+background, and failures are recorded in the system log.
 
-## Default behavior
+On the first launch of this version, the app requests login registration
+through macOS Service Management. Approval and later changes are managed
+through **Start at Login** or System Settings.
 
-`forwardingEnabled` records whether automatic mode is armed. It resets to true
-on launch, including Start at Login. The app checks the physical destination
-for writable output volume controls. It leaves a device with native volume
-control on the direct macOS route and starts the helper only for a confirmed
-fixed-volume device. If Core Audio cannot determine the capability, the app
-waits for a usable output. Changing outputs rechecks the new destination.
-Choosing Disable pauses automatic mode for the current session, including
-when outputs change.
-Start at Login is separately controlled by
-`SMAppService.mainAppService`.
+## Recovery and Quit
 
-## Enable sequence
+Each startup attempt has a 25-second watchdog. Temporary startup failures and
+unexpected signals after readiness restore the physical outputs and retry,
+with delays of 1, 2, 4, 8, then at most 15 seconds. Authentication, busy-reader,
+and format failures end that attempt. The app keeps monitoring for output
+changes. Quit and output changes cancel pending retries.
 
-1. Resolve Sound Volume by UID.
-2. Capture the current real normal and system-output UIDs.
-3. Resolve the selected or automatic physical destination and check its volume controls.
-4. For a fixed-volume destination, launch the nested helper with its device UID.
-5. Wait for the helper to map the ring and start physical output-only IO.
-6. After its ready acknowledgement, select Sound Volume as normal and system
-   output; show **Enabled — physical device** after the active acknowledgement.
-
-Each startup attempt times out after 25 seconds. Temporary buffer timeouts and
-unavailable-service failures before readiness retry automatically, with delays
-of 1, 2, 4, 8, then at most 15 seconds. The menu shows the pending retry and
-keeps Enable intent until success, Disable, or Quit. Authentication, busy-reader,
-format errors, and established-session failures remain terminal.
-Changing physical output restores the real defaults, then restarts the helper
-if the new output has fixed volume.
-
-On a terminal failure, stop the helper, restore the saved real outputs, persist
-the disabled state, and show a concise error. Pending retries are canceled by
-Disable, Quit, and output changes; restoration failure also stops recovery.
-
-## Disable and Quit
-
-Both paths restore the default normal output and default system output before
-stopping the helper. Each selector is changed only if it still points at Sound
-Volume, preserving a route the user changed in System Settings. Writes are read
-back and verified. Normal Quit is refused if a real output cannot be restored.
-
-An unexpected helper exit uses the same restoration code, clears the enabled
-preference, and shows an error state. Termination requested by Disable or Quit
-is distinguished from an unexpected exit by launch generation and task state.
+Quit restores the default normal output and default system-sounds output
+before stopping the helper. Each selector is changed only if it still points
+at Sound Volume, preserving routes selected in System Settings. Writes are
+read back and verified. Quit reports an error if restoration fails.
 
 ## Output selection
 
 Automatic follows the current physical default. An explicit menu selection
-stores the device UID. When automatic mode is armed, a native-volume selection
-routes directly to that device and a fixed-volume selection starts the helper.
-An external physical-output change supersedes an explicit selection and returns
-the app to Automatic. Selecting an output while disabled saves the choice
-without arming automatic mode.
-Duplicate notifications during startup do not restart the helper; a different
-physical default replaces the pending attempt. Helper route-loss messages and
-exits use the same recovery path, so notification order cannot disable volume
-control during an output switch. An explicit Disable stays in effect until
-Enable or the next launch, including when outputs change.
+stores the device UID and immediately applies the routing policy. An external
+physical-output change supersedes an explicit selection and returns the app
+to Automatic.
+
+Duplicate notifications during startup leave the current attempt in place. A
+different physical default replaces the pending attempt. Helper route-loss
+messages and exits use the same output-change path.
 
 ## Privacy
 

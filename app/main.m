@@ -10,11 +10,9 @@
 #include <os/log.h>
 
 typedef NS_ENUM(NSInteger, SVCAppState) {
-    SVCAppStateDisabled,
     SVCAppStateNativeVolume,
     SVCAppStateNoEligibleOutput,
     SVCAppStateStarting,
-    SVCAppStateWaiting,
     SVCAppStateForwarding,
     SVCAppStateError,
 };
@@ -268,15 +266,12 @@ static NSArray<NSDictionary<NSString *, id> *> *SVCPhysicalOutputs(void) {
 @interface SVCAppDelegate : NSObject <NSApplicationDelegate, NSMenuDelegate>
 @property(nonatomic, strong) NSStatusItem *statusItem;
 @property(nonatomic, strong) NSMenu *menu;
-@property(nonatomic, strong) NSMenuItem *statusMenuItem;
-@property(nonatomic, strong) NSMenuItem *enabledMenuItem;
 @property(nonatomic, strong) NSMenuItem *loginMenuItem;
 @property(nonatomic, strong) NSMenuItem *outputMenuItem;
 @property(nonatomic, strong) NSTask *forwarderTask;
 @property(nonatomic, strong) NSTask *stoppingForwarderTask;
 @property(nonatomic, strong) NSPipe *forwarderPipe;
 @property(nonatomic, strong) NSMutableData *lineBuffer;
-@property(nonatomic, copy) NSString *physicalOutputName;
 @property(nonatomic, copy) NSString *physicalOutputUID;
 @property(nonatomic, copy) NSString *errorDetail;
 @property(nonatomic, copy) NSString *lastPhysicalDefaultUID;
@@ -328,15 +323,10 @@ static OSStatus SVCDefaultDeviceChanged(
     (void)notification;
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
     [[NSUserDefaults standardUserDefaults] registerDefaults:@{
-        @"forwardingEnabled": @YES,
         @"physicalDeviceUID": @"",
         @"lastPhysicalDefaultUID": @"",
         @"lastPhysicalSystemUID": @"",
     }];
-    // Disable and helper failures apply only to the current session. Every
-    // launch, including Start at Login, should monitor for fixed-volume outputs.
-    [[NSUserDefaults standardUserDefaults]
-        setBool:YES forKey:@"forwardingEnabled"];
     self.lastPhysicalDefaultUID = [[NSUserDefaults standardUserDefaults]
         stringForKey:@"lastPhysicalDefaultUID"];
     self.lastPhysicalSystemUID = [[NSUserDefaults standardUserDefaults]
@@ -349,31 +339,20 @@ static OSStatus SVCDefaultDeviceChanged(
     self.statusItem = [[NSStatusBar systemStatusBar]
         statusItemWithLength:NSVariableStatusItemLength];
     self.statusItem.autosaveName = @"org.soundvolumecontrol.status-item";
+    NSImage *icon = [NSImage imageWithSystemSymbolName:@"speaker.wave.2"
+                             accessibilityDescription:@"SoundVolumeControl"];
+    icon.template = YES;
+    self.statusItem.button.image = icon;
     self.statusItem.button.toolTip = @"SoundVolumeControl";
     self.menu = [[NSMenu alloc] initWithTitle:@"SoundVolumeControl"];
     self.menu.delegate = self;
     self.statusItem.menu = self.menu;
     [self buildMenu];
-    [self updatePresentation];
-
-    if ([self forwardingEnabled]) {
-        NSString *detail = nil;
-        if (![self launchForwarder]) {
-            detail = self.errorDetail.length > 0
-                ? self.errorDetail : @"The audio helper could not be started.";
-        }
-        if (detail != nil) {
-            [[NSUserDefaults standardUserDefaults]
-                setBool:NO forKey:@"forwardingEnabled"];
-            [self stopForwarder];
-            self.appState = SVCAppStateDisabled;
-            [self updatePresentation];
-            [self showErrorWithTitle:@"Could not enable volume control"
-                             detail:detail];
-        }
-    } else {
-        self.appState = SVCAppStateDisabled;
-        [self updatePresentation];
+    [self registerDefaultLoginItem];
+    [self updateLoginMenu];
+    if (![self launchForwarder]) {
+        os_log_error(OS_LOG_DEFAULT, "SoundVolumeControl: audio startup failed: %{public}@",
+                     self.errorDetail);
     }
 }
 
@@ -500,12 +479,10 @@ static OSStatus SVCDefaultDeviceChanged(
         self.startingPhysicalDefaultUID = selectedUID;
     }
     *outUID = nil;
-    self.physicalOutputName = nil;
     self.physicalOutputUID = nil;
     self.errorDetail = nil;
     self.appState = support == SVCVolumeSupportNative
         ? SVCAppStateNativeVolume : SVCAppStateNoEligibleOutput;
-    [self updatePresentation];
     return YES;
 }
 
@@ -536,12 +513,12 @@ static OSStatus SVCDefaultDeviceChanged(
 
 - (void)defaultDevicesDidChange {
     [self capturePhysicalDefaults];
-    if (self.quitting || ![self forwardingEnabled]) {
+    if (self.quitting) {
         return;
     }
     NSString *uid = [self currentPhysicalDefaultUID];
     if (uid.length == 0 && [self soundVolumeIsDefaultOutput]) {
-        // Automatic mode can be armed without a helper. Restore a real
+        // Automatic routing can run without a helper. Restore a real
         // output if Sound Volume was selected while the app was waiting.
         if (self.appState == SVCAppStateNativeVolume
             || self.appState == SVCAppStateNoEligibleOutput) {
@@ -563,7 +540,6 @@ static OSStatus SVCDefaultDeviceChanged(
     // destination. Automatic follows the newly selected physical default.
     [[NSUserDefaults standardUserDefaults] setObject:@""
                                               forKey:@"physicalDeviceUID"];
-    self.physicalOutputName = nil;
     self.physicalOutputUID = nil;
     [self restartForwarderForDefaultChange:YES];
 }
@@ -651,11 +627,6 @@ static OSStatus SVCDefaultDeviceChanged(
     return YES;
 }
 
-- (BOOL)forwardingEnabled {
-    return [[NSUserDefaults standardUserDefaults]
-        boolForKey:@"forwardingEnabled"];
-}
-
 - (NSString *)selectedPhysicalUID {
     NSString *uid = [[NSUserDefaults standardUserDefaults]
         stringForKey:@"physicalDeviceUID"];
@@ -664,19 +635,6 @@ static OSStatus SVCDefaultDeviceChanged(
 
 - (void)buildMenu {
     [self.menu removeAllItems];
-
-    self.statusMenuItem = [[NSMenuItem alloc]
-        initWithTitle:@"Starting…" action:nil keyEquivalent:@""];
-    self.statusMenuItem.enabled = NO;
-    [self.menu addItem:self.statusMenuItem];
-    [self.menu addItem:[NSMenuItem separatorItem]];
-
-    self.enabledMenuItem = [[NSMenuItem alloc]
-        initWithTitle:@"Enable"
-               action:@selector(toggleForwarding:)
-        keyEquivalent:@""];
-    self.enabledMenuItem.target = self;
-    [self.menu addItem:self.enabledMenuItem];
 
     self.outputMenuItem = [[NSMenuItem alloc]
         initWithTitle:@"Output Device" action:nil keyEquivalent:@""];
@@ -709,18 +667,15 @@ static OSStatus SVCDefaultDeviceChanged(
 - (void)menuWillOpen:(NSMenu *)menu {
     (void)menu;
     [self rebuildPhysicalOutputMenu];
-    [self updatePresentation];
+    [self updateLoginMenu];
 }
 
 - (void)rebuildPhysicalOutputMenu {
     NSMenu *submenu = [[NSMenu alloc] initWithTitle:@"Output Device"];
     NSString *selectedUID = [self selectedPhysicalUID];
 
-    NSString *automaticTitle = self.physicalOutputName.length > 0
-        ? [NSString stringWithFormat:@"Automatic — %@", self.physicalOutputName]
-        : @"Automatic";
     NSMenuItem *automatic = [[NSMenuItem alloc]
-        initWithTitle:automaticTitle
+        initWithTitle:@"Automatic"
                action:@selector(selectPhysicalOutput:)
         keyEquivalent:@""];
     automatic.target = self;
@@ -748,56 +703,7 @@ static OSStatus SVCDefaultDeviceChanged(
     self.outputMenuItem.submenu = submenu;
 }
 
-- (void)updatePresentation {
-    NSString *symbol = @"speaker.wave.2";
-    NSString *status = @"Starting audio helper…";
-    switch (self.appState) {
-        case SVCAppStateDisabled:
-            symbol = @"speaker.slash";
-            status = @"Disabled";
-            break;
-        case SVCAppStateNativeVolume:
-            status = @"Using macOS volume control";
-            break;
-        case SVCAppStateNoEligibleOutput:
-            status = @"Waiting for a compatible output";
-            break;
-        case SVCAppStateStarting:
-            symbol = @"ellipsis.circle";
-            status = self.startupRetryPending
-                ? @"Enabling — waiting for audio service; retrying…"
-                : @"Enabling…";
-            break;
-        case SVCAppStateWaiting:
-            symbol = @"speaker.wave.2";
-            status = @"Enabling…";
-            break;
-        case SVCAppStateForwarding:
-            symbol = @"speaker.wave.3.fill";
-            status = self.physicalOutputName.length > 0
-                ? [NSString stringWithFormat:@"Enabled — %@",
-                                             self.physicalOutputName]
-                : @"Enabled";
-            break;
-        case SVCAppStateError:
-            symbol = @"exclamationmark.triangle";
-            status = self.errorDetail.length > 0
-                ? [NSString stringWithFormat:@"Error — %@", self.errorDetail]
-                : @"Audio helper error";
-            break;
-    }
-
-    NSImage *image = [NSImage imageWithSystemSymbolName:symbol
-                              accessibilityDescription:status];
-    image.template = YES;
-    self.statusItem.button.image = image;
-    self.statusItem.button.title = @"";
-    self.statusItem.button.toolTip = status;
-    self.statusMenuItem.title = status;
-    self.enabledMenuItem.title = [self forwardingEnabled]
-        ? @"Disable" : @"Enable";
-    self.enabledMenuItem.state = NSControlStateValueOff;
-
+- (void)updateLoginMenu {
     SMAppServiceStatus loginStatus = SMAppService.mainAppService.status;
     if (loginStatus == SMAppServiceStatusEnabled) {
         self.loginMenuItem.state = NSControlStateValueOn;
@@ -815,7 +721,7 @@ static OSStatus SVCDefaultDeviceChanged(
     if (self.forwarderTask.running) {
         return YES;
     }
-    if (self.quitting || ![self forwardingEnabled]) {
+    if (self.quitting) {
         return NO;
     }
     NSString *restorationDetail = nil;
@@ -823,22 +729,19 @@ static OSStatus SVCDefaultDeviceChanged(
         self.errorDetail = restorationDetail.length > 0
             ? restorationDetail : @"The physical output could not be restored.";
         self.appState = SVCAppStateError;
-        [self updatePresentation];
         return NO;
     }
     NSString *physicalUID = nil;
     if (![self prepareOutputForForwarding:&physicalUID detail:&restorationDetail]) {
         self.errorDetail = restorationDetail;
         self.appState = SVCAppStateError;
-        [self updatePresentation];
         return NO;
     }
     if (physicalUID == nil) return YES;
-    // Disable, a watchdog, or an output change may have stopped a helper that
+    // A watchdog or an output change may have stopped a helper that
     // is still unwinding a system call. Preserve it across cancelled retries.
     if (self.stoppingForwarderTask.running) {
         self.appState = SVCAppStateStarting;
-        [self updatePresentation];
         [self launchAfterDelay:1 waitingForTask:self.stoppingForwarderTask
                    generation:self.launchGeneration];
         return YES;
@@ -852,7 +755,6 @@ static OSStatus SVCDefaultDeviceChanged(
             isExecutableFileAtPath:helperURL.path]) {
         self.errorDetail = @"bundled helper is missing";
         self.appState = SVCAppStateError;
-        [self updatePresentation];
         return NO;
     }
 
@@ -870,7 +772,6 @@ static OSStatus SVCDefaultDeviceChanged(
     self.startupRetryPending = NO;
     self.forwarderReady = NO;
     self.appState = SVCAppStateStarting;
-    [self updatePresentation];
 
     NSUInteger generation = ++self.launchGeneration;
     __weak SVCAppDelegate *weakSelf = self;
@@ -903,7 +804,6 @@ static OSStatus SVCDefaultDeviceChanged(
         self.forwarderPipe = nil;
         self.errorDetail = error.localizedDescription;
         self.appState = SVCAppStateError;
-        [self updatePresentation];
         return NO;
     }
     [self scheduleAfterSeconds:SVC_APP_STARTUP_SECONDS action:^{
@@ -925,7 +825,7 @@ static OSStatus SVCDefaultDeviceChanged(
     [self scheduleAfterSeconds:delay action:^{
         SVCAppDelegate *strongSelf = weakSelf;
         if (strongSelf == nil || generation != strongSelf.launchGeneration
-            || strongSelf.quitting || ![strongSelf forwardingEnabled]) {
+            || strongSelf.quitting) {
             return;
         }
         // A timed-out helper may still be finishing a blocking system call.
@@ -936,10 +836,8 @@ static OSStatus SVCDefaultDeviceChanged(
             return;
         }
         if (![strongSelf launchForwarder]) {
-            [[NSUserDefaults standardUserDefaults]
-                setBool:NO forKey:@"forwardingEnabled"];
-            strongSelf.appState = SVCAppStateError;
-            [strongSelf updatePresentation];
+            os_log_error(OS_LOG_DEFAULT, "SoundVolumeControl: audio startup failed: %{public}@",
+                         strongSelf.errorDetail);
         }
     }];
 }
@@ -952,23 +850,17 @@ static OSStatus SVCDefaultDeviceChanged(
     BOOL restored = [self restorePhysicalDefaults:&detail];
     [self stopForwarder];
     if (!restored) {
-        [[NSUserDefaults standardUserDefaults]
-            setBool:NO forKey:@"forwardingEnabled"];
         self.errorDetail = detail.length > 0 ? detail : @"The physical output could not be restored.";
         self.appState = SVCAppStateError;
         os_log_error(OS_LOG_DEFAULT, "SoundVolumeControl: startup retry stopped; physical output restoration failed");
-        [self updatePresentation];
         return;
     }
+    self.startingPhysicalDefaultUID = [self currentPhysicalDefaultUID];
     self.startupRetryDelay = previousDelay == 0 ? 1 : MIN(previousDelay * 2, 15);
-    if (self.errorDetail.length == 0) {
-        self.errorDetail = @"The audio service has not finished starting.";
-    }
     self.startupRetryPending = YES;
     self.appState = SVCAppStateStarting;
-    os_log_info(OS_LOG_DEFAULT, "SoundVolumeControl: audio service still starting; retrying in %{public}lu seconds",
-                (unsigned long)self.startupRetryDelay);
-    [self updatePresentation];
+    os_log_info(OS_LOG_DEFAULT, "SoundVolumeControl: retrying audio helper in %{public}lu seconds: %{public}@",
+                (unsigned long)self.startupRetryDelay, self.errorDetail);
     [self launchAfterDelay:self.startupRetryDelay waitingForTask:previousTask
                generation:self.launchGeneration];
 }
@@ -980,43 +872,37 @@ static OSStatus SVCDefaultDeviceChanged(
     self.forwarderPipe.fileHandleForReading.readabilityHandler = nil;
     self.forwarderTask = nil;
     self.forwarderPipe = nil;
-    if (self.quitting || ![self forwardingEnabled]) return;
+    if (self.quitting) return;
     // The helper can exit before either its final log or the Core Audio
     // notification reaches the main queue. Recover the new route either way.
     [self defaultDevicesDidChange];
     if (generation != self.launchGeneration) return;
-    if (!self.forwarderReady && reason == NSTaskTerminationReasonExit
-        && status == EX_TEMPFAIL) {
+    if ((!self.forwarderReady && reason == NSTaskTerminationReasonExit && status == EX_TEMPFAIL)
+        || (self.forwarderReady && reason == NSTaskTerminationReasonUncaughtSignal)) {
+        if (self.errorDetail.length == 0) {
+            self.errorDetail = [NSString stringWithFormat:@"Audio helper stopped (status %d).", status];
+        }
         [self retryForwarderStartup];
         return;
     }
     [self stopForwarder];
     if (self.errorDetail.length == 0) {
         self.errorDetail = [NSString stringWithFormat:
-            @"Audio helper stopped (status %d). Volume control is disabled.", status];
+            @"Audio helper stopped (status %d).", status];
     }
     os_log_error(OS_LOG_DEFAULT, "SoundVolumeControl: audio helper stopped with terminal status %{public}d", status);
     self.appState = SVCAppStateError;
-    [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"forwardingEnabled"];
     (void)[self restorePhysicalDefaults:NULL];
-    [self updatePresentation];
+    self.startingPhysicalDefaultUID = [self currentPhysicalDefaultUID];
 }
 
 - (void)forwarderStartupTimedOutForGeneration:(NSUInteger)generation {
     if (generation != self.launchGeneration || self.quitting
-        || ![self forwardingEnabled] || self.appState == SVCAppStateForwarding) {
+        || self.appState == SVCAppStateForwarding) {
         return;
     }
-    if (!self.forwarderReady) {
-        [self retryForwarderStartup];
-        return;
-    }
-    [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"forwardingEnabled"];
-    (void)[self restorePhysicalDefaults:NULL];
-    [self stopForwarder];
-    self.errorDetail = @"Audio startup timed out. Volume control is disabled.";
-    self.appState = SVCAppStateError;
-    [self updatePresentation];
+    self.errorDetail = @"Audio startup timed out.";
+    [self retryForwarderStartup];
 }
 
 - (void)consumeForwarderData:(NSData *)data {
@@ -1052,13 +938,9 @@ static OSStatus SVCDefaultDeviceChanged(
 }
 
 - (void)consumeForwarderLine:(NSString *)line {
-    if ([line hasPrefix:@"Physical output: "]) {
-        NSString *detail = [line substringFromIndex:@"Physical output: ".length];
-        NSRange uidStart = [detail rangeOfString:@" (" options:NSBackwardsSearch];
-        self.physicalOutputName = uidStart.location == NSNotFound
-            ? detail : [detail substringToIndex:uidStart.location];
-    } else if ([line isEqualToString:@"Forwarder ready."]) {
-        if (!self.quitting && [self forwardingEnabled]) {
+    if ([line isEqualToString:@"Forwarder ready."]) {
+        if (!self.quitting && !self.forwarderReady
+            && self.appState == SVCAppStateStarting) {
             NSUInteger generation = self.launchGeneration;
             [self defaultDevicesDidChange];
             if (generation != self.launchGeneration) return;
@@ -1068,20 +950,18 @@ static OSStatus SVCDefaultDeviceChanged(
             }
             NSString *detail = nil;
             if (![self selectSoundVolumeWithDetail:&detail]) {
-                [[NSUserDefaults standardUserDefaults]
-                    setBool:NO forKey:@"forwardingEnabled"];
                 (void)[self restorePhysicalDefaults:NULL];
                 [self stopForwarder];
+                self.startingPhysicalDefaultUID = [self currentPhysicalDefaultUID];
                 self.errorDetail = detail;
                 self.appState = SVCAppStateError;
+                os_log_error(OS_LOG_DEFAULT, "SoundVolumeControl: virtual output selection failed: %{public}@", detail);
             } else {
                 self.forwarderReady = YES;
-                self.startupRetryDelay = 0;
             }
         }
-    } else if ([line containsString:@"Waiting for Sound Volume"]) {
-        self.appState = SVCAppStateWaiting;
-    } else if ([line containsString:@"Forwarding is active"]) {
+    } else if (self.forwarderReady && [line isEqualToString:@"Forwarding is active."]) {
+        self.startupRetryDelay = 0;
         self.appState = SVCAppStateForwarding;
     } else if ([line containsString:@"no longer selected"]) {
         [self defaultDevicesDidChange];
@@ -1091,11 +971,10 @@ static OSStatus SVCDefaultDeviceChanged(
                || [line containsString:@"mismatch:"]) {
         self.errorDetail = line;
         // The exit status decides whether a startup error is transient. Keep
-        // startup state until then so device notifications cannot disable a
+        // startup state until then so device notifications cannot interrupt a
         // pending retry merely because the physical output is still selected.
         if (self.forwarderReady) self.appState = SVCAppStateError;
     }
-    [self updatePresentation];
 }
 
 - (void)stopForwarder {
@@ -1124,7 +1003,7 @@ static OSStatus SVCDefaultDeviceChanged(
 }
 
 - (void)restartForwarderForDefaultChange:(BOOL)defaultChanged {
-    if (![self forwardingEnabled]) {
+    if (self.quitting) {
         return;
     }
     NSString *detail = nil;
@@ -1133,70 +1012,28 @@ static OSStatus SVCDefaultDeviceChanged(
         // Volume may still be the normal output. An external change has already
         // selected a real output, so cancel that failed recovery completely.
         if (defaultChanged) {
-            [[NSUserDefaults standardUserDefaults]
-                setBool:NO forKey:@"forwardingEnabled"];
+            self.startingPhysicalDefaultUID = [self currentPhysicalDefaultUID];
             [self stopForwarder];
             self.errorDetail = detail;
             self.appState = SVCAppStateError;
-            [self updatePresentation];
         }
-        [self showErrorWithTitle:@"Could not change audio output" detail:detail];
+        os_log_error(OS_LOG_DEFAULT, "SoundVolumeControl: output change failed: %{public}@", detail);
         return;
     }
     NSTask *previousTask = self.forwarderTask != nil
         ? self.forwarderTask : self.stoppingForwarderTask;
     [self stopForwarder];
-    self.physicalOutputName = nil;
     self.physicalOutputUID = nil;
     NSString *physicalUID = nil;
     if (![self prepareOutputForForwarding:&physicalUID detail:&detail]) {
-        [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"forwardingEnabled"];
         self.errorDetail = detail;
         self.appState = SVCAppStateError;
-        [self updatePresentation];
-        [self showErrorWithTitle:@"Could not change audio output" detail:detail];
+        os_log_error(OS_LOG_DEFAULT, "SoundVolumeControl: output change failed: %{public}@", detail);
         return;
     }
     if (physicalUID == nil) return;
     self.appState = SVCAppStateStarting;
-    [self updatePresentation];
     [self launchAfterDelay:1.5 waitingForTask:previousTask generation:self.launchGeneration];
-}
-
-- (void)toggleForwarding:(id)sender {
-    (void)sender;
-    if (![self forwardingEnabled]) {
-        [[NSUserDefaults standardUserDefaults]
-            setBool:YES forKey:@"forwardingEnabled"];
-        NSString *detail = nil;
-        if (![self launchForwarder]) {
-            detail = self.errorDetail.length > 0
-                ? self.errorDetail : @"The audio helper could not be started.";
-        }
-        if (detail != nil) {
-            [[NSUserDefaults standardUserDefaults]
-                setBool:NO forKey:@"forwardingEnabled"];
-            [self stopForwarder];
-            self.appState = SVCAppStateDisabled;
-            [self updatePresentation];
-            [self showErrorWithTitle:@"Could not enable volume control"
-                             detail:detail];
-        }
-    } else {
-        [[NSUserDefaults standardUserDefaults]
-            setBool:NO forKey:@"forwardingEnabled"];
-        NSString *detail = nil;
-        if (![self restorePhysicalDefaults:&detail]) {
-            [self showErrorWithTitle:@"Volume control remains enabled"
-                             detail:detail];
-            [[NSUserDefaults standardUserDefaults]
-                setBool:YES forKey:@"forwardingEnabled"];
-            return;
-        }
-        [self stopForwarder];
-        self.appState = SVCAppStateDisabled;
-        [self updatePresentation];
-    }
 }
 
 - (void)selectPhysicalOutput:(NSMenuItem *)sender {
@@ -1252,6 +1089,22 @@ static OSStatus SVCDefaultDeviceChanged(
     return YES;
 }
 
+- (void)registerDefaultLoginItem {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    if ([defaults boolForKey:@"didSetDefaultLoginItem"]) return;
+
+    // Register once so future launches honor changes made in Login Items.
+    [defaults setBool:YES forKey:@"didSetDefaultLoginItem"];
+    SMAppService *service = SMAppService.mainAppService;
+    if (service.status == SMAppServiceStatusNotRegistered) {
+        NSError *error = nil;
+        if (![service registerAndReturnError:&error]) {
+            os_log_error(OS_LOG_DEFAULT, "SoundVolumeControl: login item registration failed: %{public}@",
+                         error.localizedDescription);
+        }
+    }
+}
+
 - (void)toggleStartAtLogin:(id)sender {
     (void)sender;
     SMAppService *service = SMAppService.mainAppService;
@@ -1259,7 +1112,7 @@ static OSStatus SVCDefaultDeviceChanged(
     BOOL success = NO;
     if (service.status == SMAppServiceStatusRequiresApproval) {
         [SMAppService openSystemSettingsLoginItems];
-        [self updatePresentation];
+        [self updateLoginMenu];
         return;
     }
     if (service.status == SMAppServiceStatusEnabled) {
@@ -1274,7 +1127,7 @@ static OSStatus SVCDefaultDeviceChanged(
     if (service.status == SMAppServiceStatusRequiresApproval) {
         [SMAppService openSystemSettingsLoginItems];
     }
-    [self updatePresentation];
+    [self updateLoginMenu];
 }
 
 - (void)showAbout:(id)sender {

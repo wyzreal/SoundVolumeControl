@@ -15,7 +15,7 @@ they do not install the driver, change audio routes, or play audio.
 | --- | --- |
 | Driver | Output-only topology, volume/mute properties, stream state, final WriteMix publication. |
 | Audio processing | Square-law gain, smoothing, underruns, gaps, frame integrity, and restart behavior. |
-| App lifecycle | Readiness handshake, startup failure, output-switch event ordering, preserved Disable intent, stale helper messages, restoration decisions, and safe Quit. |
+| App lifecycle | Readiness handshake, startup and crash retries, automatic output switching, stale helper messages, restoration decisions, and safe Quit. |
 | Anonymous memory | Matching PCM across mappings; kernel rejection of write escalation. |
 | XPC integration | Real driver-generated PCM between separate signed processes; exact reader/broker pins; wrong identities and roles denied. |
 | Writer identity | Real Apple HAL helper accepted when present; unrelated Apple executable and ad-hoc identity impersonation denied. |

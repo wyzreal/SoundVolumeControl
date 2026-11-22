@@ -67,18 +67,17 @@ and stale readers. It does not protect against root, a compromised kernel,
 a compromised trusted Core Audio host, or a compromised authorized helper.
 Already delivered audio cannot be recalled. No independent audit is claimed.
 
-Enable waits for mapping and physical-output readiness before selecting Sound
-Volume. Each startup attempt has a 25-second watchdog. Before readiness, buffer
-timeouts and unavailable-service failures start a fresh helper after a delay
-of 1, 2, 4, 8, then at most 15 seconds, while the physical route remains active.
-There is no fixed total boot deadline. Disable, Quit, or a new output choice
-cancels pending retries. Authentication/format failures and established-session
-loss still stop forwarding; exhausted startup resets remain fatal because XPC
-can also report remote signature rejection as a reset.
-Disable and Quit restore only
-selectors still pointing to Sound Volume, preserving external user changes.
-Normal Quit is cancelled if restoration fails. Broker/helper loss prompts
-restoration through supervision.
+Automatic routing waits for mapping and physical-output readiness before
+selecting Sound Volume. Each startup attempt has a 25-second watchdog.
+Startup timeouts, a temporarily unavailable service, and an unexpected helper
+signal after readiness retry with delays of 1, 2, 4, 8, then at most 15
+seconds. The physical route stays active between attempts. Quit or a new
+output choice cancels pending retries. Authentication and format failures,
+broker revocation, and exhausted startup resets stop the current attempt.
+
+Quit restores selectors still pointing to Sound Volume, preserving external
+user changes. Normal Quit is cancelled if restoration fails. The app also
+attempts to restore the physical route if the helper exits.
 
 [Validation coverage](validation.md) records automated evidence. Real HAL
 sandbox registration, music, privacy prompts, native controls, restoration,

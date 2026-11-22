@@ -10,21 +10,20 @@ INSTALL MANUALLY
 4. The app checks the selected output on launch and whenever it changes. It
    selects Sound Volume for fixed-volume devices after the helper is ready.
    Devices with native volume control keep using the direct macOS output.
-5. Use its menu for Enable/Disable, Output Device, Start at Login, About, Quit.
-   Use normal macOS volume controls; there is no extra slider.
+5. Use normal macOS volume controls. The speaker menu offers Output Device,
+   Start at Login, About, and Quit.
 
 Reopen the app from Applications or Spotlight when closed.
 
 WHAT CHANGED
 
-0.8.8 keeps volume control enabled when macOS switches to a new physical
-output, including during startup. A previous explicit destination is replaced
-by the new default. Switching outputs in macOS or the app preserves an
-intentional Disable; only Enable or the next app launch enables it again.
+Routing updates in the background when macOS switches to a new physical
+output. A previous explicit destination is replaced by the new default.
+The app requests Start at Login registration on first launch.
 
 Temporary cold-start timeouts still retry automatically with delays capped at
-15 seconds, keeping the physical output active until ready. Disable and Quit
-cancel retries. Authentication and competing-reader errors remain explicit.
+15 seconds, keeping the physical output active until ready. Quit cancels
+retries and restores the physical outputs. Failures go to the system log.
 
 The matching broker, driver, helper, and app must be installed together.
 
@@ -51,9 +50,9 @@ DEVELOPMENT STATUS
 Tests passed for separate-process driver audio, authentication, wrong-identity
 rejection, read-only memory, reconnect rotation, and session revocation.
 Installed HAL sandbox behavior and audible music remain unverified for this
-candidate. First test playback, native controls, 60%, mute, Disable, and Quit.
+candidate. First test playback, native controls, 60%, mute, and Quit.
 If sound is absent, select your real output in System Settings > Sound > Output
-and report the app error plus macOS and output-device details.
+and report any SoundVolumeControl errors from Console plus macOS and output-device details.
 
 This local build is ad-hoc signed, not Developer ID signed or notarized.
 macOS may require Control-click > Open or Privacy & Security approval.
