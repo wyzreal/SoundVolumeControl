@@ -1,6 +1,6 @@
 # Menu-bar app
 
-- App: 0.8.9 (build 21), native arm64 development candidate
+- App: 0.8.9 (build 21), native arm64
 - Embedded helper: 0.8.9 (build 21)
 - Driver: 0.8.9 (build 21)
 - Small authenticated XPC broker, with no UI or audio processing
@@ -16,11 +16,14 @@ The first menu line shows the current routing status, including the output name
 or error detail when available. The dot beside the speaker follows this priority
 from highest to lowest.
 
-1. **Red** for an audio routing error.
-2. **Yellow** for an available update.
-3. **Green** when Sound Volume is routing audio or **gray** when macOS controls
-   the output directly. An outlined gray dot indicates startup, retry, or an
-   output whose capability is still unknown.
+1. **Red** for an audio routing error the app detected.
+2. **Yellow** for a confirmed newer stable release with a compatible installer.
+3. **Green** when the helper is actively routing through Sound Volume or **gray**
+   when macOS controls the output directly. An outlined gray dot indicates
+   startup, retry, or a wait for a compatible output.
+
+Green reports the software routing state. Verify audible sound at the display
+or speakers. Display input, mute, and cable faults can leave the dot green.
 
 When a routing error and an update are present, the menu shows both. The dot
 turns yellow once routing recovers if the update is still available. The menu
@@ -52,9 +55,9 @@ Sound Volume as the normal and system-sounds output. If the device capability
 is unknown, the app waits for a usable output. Routing changes run in the
 background, and failures are recorded in the system log.
 
-On the first launch of this version, the app requests login registration
-through macOS Service Management. Approval and later changes are managed
-through **Start at Login** or System Settings.
+The app requests **Start at Login** by default on first launch through macOS
+Service Management. Approval and later changes are managed through **Start at
+Login** or System Settings.
 
 ## Recovery and Quit
 

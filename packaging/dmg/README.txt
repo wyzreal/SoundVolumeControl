@@ -1,5 +1,5 @@
-SoundVolumeControl 0.8.9 development candidate
-============================================
+SoundVolumeControl 0.8.9 (build 21)
+==================================
 
 INSTALL MANUALLY
 
@@ -15,15 +15,25 @@ INSTALL MANUALLY
 
 Reopen the app from Applications or Spotlight when closed.
 
-WHAT CHANGED
+ROUTING AND UPDATES
 
-Check for Updates looks for a newer stable GitHub release. Automatic checks
-are on by default and can be turned off in the speaker menu. A yellow dot
-signals an available update. Audio routing errors take priority and show red.
+Green means the helper is actively routing through Sound Volume. Confirm
+audible output at the display or speakers. Display input, mute, and cable
+faults can leave the dot green. Gray means macOS controls the output directly.
+An outlined gray dot means the app is preparing, retrying, or waiting for a
+compatible output.
+
+Check for Updates looks for a newer stable GitHub release with a compatible
+installer. Check for Updates Automatically is on by default and can be turned
+off in the speaker menu. An available update shows yellow. A routing error
+the app detects takes priority and shows red while the menu still lists the
+update. Open the update item and choose View Release to download and install
+the update manually.
 
 Routing updates in the background when macOS switches to a new physical
 output. A previous explicit destination is replaced by the new default.
-The app requests Start at Login registration on first launch.
+The app requests Start at Login by default on first launch. Use the speaker
+menu or macOS Login Items settings to change it.
 
 Temporary cold-start timeouts still retry automatically with delays capped at
 15 seconds, keeping the physical output active until ready. Quit cancels
@@ -53,14 +63,13 @@ DEVELOPMENT STATUS
 
 Tests passed for separate-process driver audio, authentication, wrong-identity
 rejection, read-only memory, reconnect rotation, and session revocation.
-Installed HAL sandbox behavior and audible music remain unverified for this
-candidate. First test playback, native controls, 60%, mute, and Quit.
+Installed audible playback and hardware reliability validation for 1.0
+are pending. First test playback, native controls, 60%, mute, and Quit.
 If sound is absent, select your real output in System Settings > Sound > Output
 and report any SoundVolumeControl errors from Console plus macOS and output-device details.
 
-This local build is ad-hoc signed, not Developer ID signed or notarized.
-macOS may require Control-click > Open or Privacy & Security approval.
-Install only from a trusted source. No independent security audit is claimed.
+This build uses ad-hoc signatures. macOS may ask for approval in Privacy &
+Security. The GitHub release includes SHA256SUMS.txt to verify the DMG.
 
 The driver also reconnects if the broker service is unavailable during boot.
 Startup reader resets have their existing bounded retries (error 54).

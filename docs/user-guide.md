@@ -1,6 +1,6 @@
 # SoundVolumeControl user guide
 
-Version 0.8.9 development candidate for Apple Silicon and macOS 14+.
+Version 0.8.9 (build 21) for Apple Silicon and macOS 14+.
 
 Audio uses authenticated XPC and anonymous read-only memory. Installed playback
 and hardware reliability still need [validation](validation.md).
@@ -14,16 +14,17 @@ It stays in the menu bar and has no separate window or custom volume slider.
 ## Install from the DMG
 
 1. If an older copy is running, use its **Quit SoundVolumeControl** command.
-2. Open `SoundVolumeControl-0.8.9.dmg` from a trusted source.
+2. Download `SoundVolumeControl-0.8.9.dmg` and `SHA256SUMS.txt`, then open the
+   DMG. [0.8.9 GitHub release](https://github.com/wyzreal/SoundVolumeControl/releases/tag/v0.8.9)
 3. Double-click **Install SoundVolumeControl.pkg**.
 4. Follow Installer and enter an administrator password.
 5. The installer adds `SoundVolumeControl.app` to `/Applications`, installs the
    matching Core Audio driver and small authenticated connection broker, briefly
    restarts Core Audio, and opens the app.
 
-The development DMG is ad-hoc signed rather than notarized. If macOS blocks it,
-Control-click the item and choose Open, or approve it in Privacy & Security.
-Install only a DMG built from this source or received through a trusted channel.
+The DMG contains an ad-hoc-signed build. macOS may ask you to approve it in
+Privacy & Security. Verify the download against `SHA256SUMS.txt` on the release
+page before approving it. [Apple’s instructions for opening unnotarized software](https://support.apple.com/en-us/102445)
 
 The intended output-only path uses neither microphone nor system-recording APIs.
 If macOS asks for either permission during validation, decline, quit, and report
@@ -41,14 +42,30 @@ Center slider in both cases.
 Under **Output Device** in the speaker menu, **Automatic** follows the macOS
 output. Choose a specific device to use it as the destination.
 
-On the first launch of this version, the app asks macOS to start it at login.
-You can change this from **Start at Login** or System Settings. **Quit**
-restores the physical outputs and stops the helper. Reopen the app from
-Applications, Spotlight, or Launchpad when needed.
+The app requests **Start at Login** by default on first launch. macOS may
+require approval. You can change the setting from the speaker menu or System
+Settings. **Quit SoundVolumeControl** restores the physical outputs and stops
+the helper. Reopen the app from Applications, Spotlight, or Launchpad when
+needed.
+
+### Status dot
+
+| Dot | Meaning |
+| --- | --- |
+| Red | The app detected an audio routing error. |
+| Yellow | A newer stable release with a compatible installer is available. |
+| Green | The helper is actively routing through Sound Volume. |
+| Gray | macOS controls the selected output directly. |
+| Outlined gray | The app is preparing, retrying, or waiting for a compatible output. |
+
+If an update and a routing error are present, the dot stays red and the menu
+shows both. The dot turns yellow after routing recovers if the update is still
+available. Green reports the software route. Confirm audible sound by playing
+audio through the actual display or speakers.
 
 ## Volume behavior
 
-The volume control uses a square-law amplitude curve:
+Software volume for fixed-volume outputs uses a square-law amplitude curve:
 
 | macOS volume | Approximate amplitude | Approximate level |
 | ---: | ---: | ---: |
@@ -76,9 +93,12 @@ system log.
 
 ### There is no sound
 
-1. Under **Output Device**, choose the HDMI, DisplayPort, or USB-C target.
-2. Confirm the display or receiver uses the expected input and is unmuted.
-3. If the problem persists, quit and reopen the app. Record the macOS version,
+1. Open the speaker menu and read the routing status. If it shows an error,
+   note its details.
+2. Under **Output Device**, confirm the intended destination.
+3. If playback is silent while the menu says **Routing through Sound Volume**,
+   check the display or receiver’s input, mute, volume, and cable connection.
+4. If the problem persists, quit and reopen the app. Record the macOS version,
    output-device name, and any SoundVolumeControl errors from Console.
 
 For a controlled development test, also report whether music remained audible,
@@ -112,8 +132,8 @@ than granting permission as a workaround.
 
 ### Start at Login needs approval
 
-Open System Settings > General > Login Items and approve SoundVolumeControl,
-then reopen its menu.
+Choose **Start at Login — Approval Required** in the speaker menu to open
+macOS Login Items settings. Approve SoundVolumeControl, then reopen its menu.
 
 ## Diagnostic tone
 
@@ -137,10 +157,10 @@ Choose **Check for Updates…** from the speaker menu to check now. **Check for
 Updates Automatically** is on by default and checks quietly about once a day
 while the app is running. Turning it off leaves manual checks available.
 
-A yellow dot means a newer stable release with a compatible installer is
-available. An audio routing error keeps the dot red and the menu still lists
-the available update. Choose that item to view the release and open its GitHub
-page.
+Choose **Update available** in the speaker menu, then **View Release** to open
+its GitHub page. The menu remembers a confirmed update across launches and
+failed checks. It clears the item when the installed version catches up or a
+successful check finds no newer compatible release.
 
 Download the installer DMG and quit the app before running the package. The
 package updates the app, driver, broker, and signature policy together. It

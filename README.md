@@ -8,20 +8,39 @@ Native macOS volume control for fixed-volume HDMI, DisplayPort, and USB-C audio.
 Use the normal volume keys, Control Center slider, mute, and volume HUD with a
 small menu-bar app.
 
-**Development candidate: 0.8.9.** Automated tests pass. Installed playback and
-hardware reliability still need [manual validation](docs/manual-acceptance.md).
-Requires Apple Silicon, macOS 14+, and a physical output running at 48 kHz stereo.
+**0.8.9 (build 21)** is the latest release. Download the DMG and SHA-256
+checksum from GitHub. [GitHub release](https://github.com/wyzreal/SoundVolumeControl/releases/tag/v0.8.9)
+
+Requires Apple Silicon and macOS 14+. Software volume supports physical
+outputs running at 48 kHz stereo. Installed playback and hardware validation
+are pending for 1.0. [Manual acceptance checklist](docs/manual-acceptance.md)
 
 ## Features
 
 - Native system volume and mute, with smoothed software attenuation.
-- Background routing, output selection, and Start at Login by default.
-- Menu-bar routing status and manual or automatic checks for GitHub releases.
+- Automatic background routing, output selection, and configurable Start at Login.
+- Menu-bar routing status and manual or automatic checks for stable GitHub releases.
 - Startup readiness checks and physical output restoration before Quit.
 - Output-only audio driver and authenticated, anonymous shared memory.
-- No microphone or system-recording APIs, custom mixer, EQ, or network service.
+- No microphone or system-recording APIs.
 
-## Build and install
+## Install
+
+Open `SoundVolumeControl-0.8.9.dmg` and run **Install SoundVolumeControl.pkg**.
+The installer requests administrator access, installs the matching app, driver,
+broker, and signature policy, briefly restarts Core Audio, and opens the app.
+The DMG contains ad-hoc-signed components. [Installation guide](docs/user-guide.md#install-from-the-dmg)
+
+The app uses the direct macOS route for devices with native volume control and
+starts the helper automatically for supported fixed-volume outputs. Use the
+normal macOS volume controls. A green dot reports active Sound Volume routing
+in software. Check playback at the display or speakers to confirm audible
+output.
+
+Choose **Quit SoundVolumeControl** to restore the physical outputs. To
+uninstall, run **Uninstall SoundVolumeControl.command** from the DMG.
+
+## Build from source
 
 Install Xcode Command Line Tools, then run from the repository root:
 
@@ -30,20 +49,7 @@ make check
 make dmg
 ```
 
-Open `dist/SoundVolumeControl-0.8.9.dmg` and run **Install SoundVolumeControl.pkg**.
-The installer requests administrator access, installs all matching components,
-briefly restarts Core Audio, and opens the app. Builds are locally ad-hoc signed
-and are not notarized.
-
-The app checks the output on launch and whenever it changes. It steps in for
-fixed-volume devices and leaves outputs with native macOS volume control on
-their direct route. Routing runs automatically while the app is open.
-Use the normal macOS volume controls.
-Choose **Quit** to restore the physical output. To uninstall,
-run **Uninstall SoundVolumeControl.command** from the DMG.
-
-Always install the app, driver, broker, and signature policy together.
-See the [user guide](docs/user-guide.md) for setup and troubleshooting.
+The build writes the matching installer to `dist/SoundVolumeControl-0.8.9.dmg`.
 
 ## How it works
 

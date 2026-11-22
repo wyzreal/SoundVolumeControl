@@ -1,9 +1,30 @@
 # Validation
 
-The project is a development candidate. Automated checks cover algorithms,
-authentication, packaging, and simulated lifecycle behavior. Installed audible
-playback and reliability have not been accepted; use the
-[manual checklist](manual-acceptance.md) to record those results.
+Version 0.8.9 is published on GitHub. Automated checks cover audio processing,
+authentication, packaging, routing behavior, and update checks. Use the
+[manual checklist](manual-acceptance.md) to record audible playback and
+hardware reliability for the 1.0 decision.
+
+## 0.8.9 release verification
+
+On 2026-11-22, `make check` and the DMG audit passed for 0.8.9/build 21.
+The installed app, embedded helper, and driver matched the audited package.
+The app was running, and the installed HAL driver passed the read-only
+Core Audio checks.
+
+The public release endpoint reported 0.8.9 as the latest stable release and
+returned the matching installer asset. The live updater offered 0.8.9 with
+0.8.8 as the installed version and reported 0.8.9 as current with 0.8.9 as the
+installed version.
+
+The audited DMG SHA-256 is
+`0249ba09a8dd2d14a1b80676169b7edb8c9295d84e29e17a48e0aae985484554`.
+The installer and checksum are attached to the
+[v0.8.9 release](https://github.com/wyzreal/SoundVolumeControl/releases/tag/v0.8.9).
+
+Installed audible playback, hardware switching, sleep/wake, reboot, and
+sustained playback remain open. The green dot records the app's forwarding
+state. Audible output must be checked separately at the speakers or display.
 
 ## Automated coverage
 
@@ -16,6 +37,7 @@ they do not install the driver, change audio routes, or play audio.
 | Driver | Output-only topology, volume/mute properties, stream state, final WriteMix publication. |
 | Audio processing | Square-law gain, smoothing, underruns, gaps, frame integrity, and restart behavior. |
 | App lifecycle | Readiness handshake, startup and crash retries, automatic output switching, stale helper messages, restoration decisions, and safe Quit. |
+| Update checks | Stable release and installer selection, version comparison, scheduling, retries, persistence, and routing-error priority over an available update. |
 | Anonymous memory | Matching PCM across mappings; kernel rejection of write escalation. |
 | XPC integration | Real driver-generated PCM between separate signed processes; exact reader/broker pins; wrong identities and roles denied. |
 | Writer identity | Real Apple HAL helper accepted when present; unrelated Apple executable and ad-hoc identity impersonation denied. |

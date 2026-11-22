@@ -1,11 +1,19 @@
 # Manual acceptance — 0.8.9 candidate
 
-0.8.8 installed partial pass on 2026-11-19: app, helper, and driver report
-build 20; installed binaries match the audited package, signatures and reader
-policy pass, and read-only audio checks pass. The app and helper are running
-with forwarding enabled. Automated lifecycle regressions cover output-switch
-ordering and preserved Disable intent; audible playback, real device switching,
-and broader hardware reliability still need this checklist.
+## Current verification
+
+On 2026-11-22, the 0.8.9/build 21 package passed the full automated suite and
+DMG audit. The installed components matched the audited build, the app was
+running, and read-only Core Audio checks passed. The live update client offered
+0.8.9 to a 0.8.8 version input and reported 0.8.9 as current. Audible playback
+and real hardware recovery for 0.8.9 remain open. See [validation](validation.md).
+
+## Historical verification
+
+On 2026-11-19, installed 0.8.8 components reported build 20 and matched the
+audited package. Signatures, reader policy, and read-only audio checks passed.
+The app and helper ran with forwarding enabled. Automated lifecycle tests
+covered output-switch ordering and preserved Disable intent in that version.
 
 0.8.7 installed partial pass on 2026-11-14: all components report build 19,
 signatures and installed read-only audio checks pass. A controlled 28-second
@@ -38,8 +46,8 @@ remain unverified.
 Previous release status: **partial pass on 2026-09-12 for 0.8.3**. The user confirmed audible music
 and two Disable/Enable cycles without errors. Live broker logs recorded three
 successful authenticated grants; read-only driver checks passed. Remaining items
-are unverified, including a subsequent login. Do not infer a pass
-from an automated test, an Enabled label, or earlier prototype observations.
+were unverified for that build, including a subsequent login. Record audible
+playback on the candidate under test independently of the routing indicator.
 This checklist guides intentional user testing; it does not authorize an agent
 to install software, switch outputs, or generate test sounds without a request.
 
@@ -49,7 +57,7 @@ to install software, switch outputs, or generate test sounds without a request.
 - macOS version and Mac model:
 - Physical device/model/connection:
 - Normal output and system-sounds output before installation:
-- Physical nominal sample rate (must match 48 kHz):
+- Physical nominal sample rate (software routing requires 48 kHz):
 - App/helper/driver versions (expected 0.8.9/build 21):
 - DMG checksum/source (see [validation coverage](validation.md)):
 
@@ -65,6 +73,9 @@ diagnosis. Do not uninstall while Sound Volume remains selected.
 - [ ] Reopen from Applications; the menu icon appears without a Dock window.
 - [ ] First launch requests Start at Login and later changes to that setting persist.
 - [ ] A fixed-volume output automatically selects Sound Volume after helper readiness.
+- [ ] With no pending update or routing error, the dot is green when the helper
+  confirms forwarding and gray on a native macOS route. Assess audible playback
+  by listening. The dot can stay green while the display is muted.
 - [ ] Existing music remains audible; starting a new playback app also works.
 - [ ] No microphone/system-recording permission or unexpected privacy indicator.
 - [ ] Control Center slider, Volume Up/Down keys, and native HUD behave correctly.
@@ -74,6 +85,9 @@ diagnosis. Do not uninstall while Sound Volume remains selected.
 - [ ] Quit restores normal output and system-sounds output and stops the helper.
 - [ ] Reopen and verify automatic volume control resumes.
 - [ ] With Start at Login on, log out and back in and verify automatic routing.
+- [ ] Verify **Check for Updates…** reports the current result. Turn off
+  automatic checks, reopen the app, and confirm the preference persists and
+  the manual check still works.
 
 Record pass/fail and observations for each item. A failure blocks this first
 acceptance gate even if unit tests passed.
@@ -89,15 +103,30 @@ acceptance gate even if unit tests passed.
   whether macOS selected another physical output and forwarding followed it.
 - [ ] Sleep/wake; separately test display sleep and computer sleep.
 - [ ] Test helper/broker exit and restart under controlled conditions; verify
-  restoration rather than leaving an inactive virtual default.
+  the red routing-error status when a failure is reported and that both
+  defaults return to usable physical outputs when available.
 - [ ] Lock/unlock, logout/login, and real fast-user switching; verify revocation,
   no continued old-session audio access, and expected recovery behavior.
 - [ ] Test Start at Login across reboot and verify that turning it off is respected.
-- [ ] Test mismatched/unsupported sample rates: clear failure and safe output,
-  not silent success. Do not assume the clock-drift correction resamples formats.
+- [ ] Test a fixed-volume output at an unsupported sample rate. Confirm the app
+  reports the mismatch and leaves a usable physical route.
+- [ ] With a known newer installer release or the automated test fixture,
+  verify that an update appears in the menu and turns the dot yellow. With
+  both an update and a routing error present, verify a red dot and both menu
+  entries. After routing recovers, verify yellow returns.
 - [ ] Run sustained playback; record duration, CPU/RAM, dropouts, latency, and drift.
 - [ ] Update/uninstall through the complete DMG workflow; confirm broker cleanup
   and restoration. Use a controlled test when replacement/removal is intended.
+
+## Public 1.0 release candidate
+
+Run the checklist on the exact Developer ID-signed, notarized package planned
+for release. Cover representative fixed-volume display or dock setups, a
+native-volume output, and the oldest and newest macOS versions listed as
+supported. Test a browser-downloaded clean install, an upgrade from the
+published release, and an uninstall that restores both outputs. Allow about a
+week of daily use after these checks pass. Treat unresolved app-caused audio
+loss, routing failures, or installer failures as release blockers.
 
 ## Useful diagnostics and report
 
@@ -113,5 +142,6 @@ An optional diagnostic tone is described in the [user guide](user-guide.md).
 Quit the menu app first; only one authenticated reader can connect. The helper
 must match the installed signature policy. No tone is generated in normal use.
 
-Final decision: PASS / FAIL / NOT RUN. Link results here or add a dated validation
-record. Until then, this remains an ad-hoc-signed development candidate.
+Record the final decision as PASS, FAIL, or NOT RUN and link a dated validation
+record. The published 0.8.9 package is ad-hoc signed and hardware acceptance
+remains open.

@@ -12,7 +12,9 @@ system frameworks only. The fourth executable is a small XPC broker.
 - common/SecureAudioReader.c: authenticated connection and reader lifetime.
 - broker/main.c: writer/reader trust checks, console gating, revocation.
 - forwarder/: physical output IO, sample reader, gain, cleanup.
-- app/main.m: minimal menu, readiness, routing, and restoration.
+- app/main.m: menu, readiness, routing, restoration, and status indicator.
+- app/UpdateChecker.m and app/UpdateRelease.m: update scheduling, preferences,
+  version comparison, and GitHub release lookup.
 - tools/signing-policy.c: exact signed-binary hash policy generation.
 
 tests/legacy/SharedAudioTransport.c remains solely for historical POSIX regression tests.
@@ -48,6 +50,11 @@ touching audio devices. The helper returns EX_TEMPFAIL only for
 initial buffer ETIMEDOUT/ECONNREFUSED; exhausted resets remain fatal. App retries
 use fresh helpers, a generation guard, and delays capped at 15 seconds.
 
+`make app-test` also runs the update checker and GitHub release parser
+fixtures. They cover update schedules, manual requests during an automatic
+check, cancellation, retries, cached results, version comparison, and installer
+selection. The app lifecycle fixture covers the red-over-yellow status priority.
+
 ## Signing order
 
 1. Build and hardened-runtime sign the broker.
@@ -59,6 +66,8 @@ use fresh helpers, a generation guard, and delays capped at 15 seconds.
 There is no circular binary-hash dependency. Never re-sign after generating
 pins. The current build is ad-hoc signed. A notarized release needs Developer ID
 signing and regeneration/retesting of every pin after final signing.
+For 1.0, use the final Developer ID-signed, notarized package for clean
+installation, upgrade, uninstall, and hardware acceptance before publishing.
 
 ## Package lifecycle
 
@@ -85,6 +94,9 @@ To make an update discoverable in the app, publish a stable GitHub Release
 tagged `vMAJOR.MINOR.PATCH` with the audited `SoundVolumeControl-MAJOR.MINOR.PATCH.dmg`
 attached. Use a unique version for each published update and keep the tag,
 bundle versions, and DMG filename in sync. Attach the DMG before publishing.
+The app checks GitHub's latest stable release and compares the tag to its
+installed version. Share prerelease download links directly with testers.
+The update menu opens the release page for manual installation.
 
 ## Installed validation
 

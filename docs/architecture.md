@@ -1,7 +1,7 @@
 # Architecture: output-only audio with authenticated IPC
 
-Current architecture for 0.8.9. Development candidate, not an independently
-audited or hardware-validated release.
+Current architecture for 0.8.9. See [validation coverage](validation.md) for
+installed checks and the remaining hardware acceptance work.
 
 ## Audio and control paths
 
@@ -79,6 +79,13 @@ Quit restores selectors still pointing to Sound Volume, preserving external
 user changes. Normal Quit is cancelled if restoration fails. The app also
 attempts to restore the physical route if the helper exits.
 
-[Validation coverage](validation.md) records automated evidence. Real HAL
-sandbox registration, music, privacy prompts, native controls, restoration,
-sleep/wake, device changes, and sustained playback remain manual gates.
+The green dot reflects the helper's forwarding acknowledgement. A display
+with its own mute enabled, an incorrect input selected, or a downstream cable
+or speaker problem can still be silent while the app reports active routing.
+Red reflects a routing failure the app observes, such as a terminal helper
+exit or failure to select Sound Volume. Red takes priority over a yellow update
+indicator. The menu can show both the routing error and the available update.
+
+Audible playback, privacy prompts, native controls, restoration, sleep/wake,
+device changes, and sustained playback remain
+[installed acceptance checks](manual-acceptance.md).

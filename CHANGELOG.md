@@ -4,7 +4,8 @@
 
 - Use software volume for fixed-volume outputs and leave native macOS volume
   in control on supported outputs. Routing works automatically in the background.
-- Show the current route or error in the speaker menu and through a status dot.
+- Show software forwarding, native routing, and app-observed routing errors in
+  the speaker menu and through a status dot.
 - Check for stable GitHub releases with compatible installer DMGs manually or
   automatically. Show a yellow dot when an update is available and give routing
   errors priority. Open the release page to install the update manually.
