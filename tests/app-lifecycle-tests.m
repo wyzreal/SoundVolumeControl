@@ -644,6 +644,29 @@ static void TestCapabilityChangeBeforeReadiness(void) {
     }
 }
 
+static void TestRoutingStatusFollowsAppState(void) {
+    SVCTestDelegate *delegate = [SVCTestDelegate new];
+    delegate.menu = [[NSMenu alloc] initWithTitle:@"SoundVolumeControl"];
+    [delegate buildMenu];
+    NSMenuItem *status = [delegate.menu itemAtIndex:0];
+    assert(!status.enabled && status.action == NULL);
+
+    delegate.appState = SVCAppStateNativeVolume;
+    assert([status.title isEqualToString:@"Using macOS volume control"]);
+    delegate.appState = SVCAppStateStarting;
+    assert([status.title isEqualToString:@"Preparing Sound Volume"]);
+    delegate.startupRetryPending = YES;
+    delegate.appState = SVCAppStateStarting;
+    assert([status.title isEqualToString:@"Retrying audio helper"]);
+    delegate.appState = SVCAppStateForwarding;
+    assert([status.title isEqualToString:@"Routing through Sound Volume"]);
+    delegate.errorDetail = @"Audio helper stopped (status 1).";
+    delegate.appState = SVCAppStateError;
+    assert([status.title isEqualToString:@"Error — Audio helper stopped (status 1)."]);
+    delegate.appState = SVCAppStateNoEligibleOutput;
+    assert([status.title isEqualToString:@"Waiting for a compatible output"]);
+}
+
 int main(void) {
     @autoreleasepool {
         NSString *suite = [NSString stringWithFormat:
@@ -694,6 +717,7 @@ int main(void) {
         TestNativeAndFixedTransitions();
         TestUnknownVolumeSupport();
         TestCapabilityChangeBeforeReadiness();
+        TestRoutingStatusFollowsAppState();
 
         [testDefaults removePersistentDomainForName:suite];
         method_setImplementation(method, original);

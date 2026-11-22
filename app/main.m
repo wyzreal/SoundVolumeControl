@@ -266,6 +266,7 @@ static NSArray<NSDictionary<NSString *, id> *> *SVCPhysicalOutputs(void) {
 @interface SVCAppDelegate : NSObject <NSApplicationDelegate, NSMenuDelegate>
 @property(nonatomic, strong) NSStatusItem *statusItem;
 @property(nonatomic, strong) NSMenu *menu;
+@property(nonatomic, strong) NSMenuItem *statusMenuItem;
 @property(nonatomic, strong) NSMenuItem *loginMenuItem;
 @property(nonatomic, strong) NSMenuItem *outputMenuItem;
 @property(nonatomic, strong) NSTask *forwarderTask;
@@ -343,7 +344,7 @@ static OSStatus SVCDefaultDeviceChanged(
                              accessibilityDescription:@"SoundVolumeControl"];
     icon.template = YES;
     self.statusItem.button.image = icon;
-    self.statusItem.button.toolTip = @"SoundVolumeControl";
+    self.statusItem.button.imagePosition = NSImageLeft;
     self.menu = [[NSMenu alloc] initWithTitle:@"SoundVolumeControl"];
     self.menu.delegate = self;
     self.statusItem.menu = self.menu;
@@ -636,6 +637,13 @@ static OSStatus SVCDefaultDeviceChanged(
 - (void)buildMenu {
     [self.menu removeAllItems];
 
+    self.statusMenuItem = [[NSMenuItem alloc]
+        initWithTitle:@"" action:nil keyEquivalent:@""];
+    self.statusMenuItem.enabled = NO;
+    [self.menu addItem:self.statusMenuItem];
+    [self.menu addItem:[NSMenuItem separatorItem]];
+    [self updateRoutingStatus];
+
     self.outputMenuItem = [[NSMenuItem alloc]
         initWithTitle:@"Output Device" action:nil keyEquivalent:@""];
     [self.menu addItem:self.outputMenuItem];
@@ -666,8 +674,66 @@ static OSStatus SVCDefaultDeviceChanged(
 
 - (void)menuWillOpen:(NSMenu *)menu {
     (void)menu;
+    [self updateRoutingStatus];
     [self rebuildPhysicalOutputMenu];
     [self updateLoginMenu];
+}
+
+- (void)setAppState:(SVCAppState)appState {
+    _appState = appState;
+    [self updateRoutingStatus];
+}
+
+- (void)updateRoutingStatus {
+    if (self.statusMenuItem == nil) return;
+
+    NSColor *color = NSColor.systemGrayColor;
+    NSString *dot = @"●";
+    NSString *status = nil;
+    NSString *outputUID = nil;
+    switch (self.appState) {
+        case SVCAppStateNativeVolume:
+            status = @"Using macOS volume control";
+            outputUID = [self currentPhysicalDefaultUID];
+            break;
+        case SVCAppStateForwarding:
+            color = NSColor.systemGreenColor;
+            status = @"Routing through Sound Volume";
+            outputUID = self.physicalOutputUID;
+            break;
+        case SVCAppStateError:
+            color = NSColor.systemRedColor;
+            status = self.errorDetail.length > 0
+                ? [NSString stringWithFormat:@"Error — %@", self.errorDetail]
+                : @"Audio routing error";
+            break;
+        case SVCAppStateStarting:
+            dot = @"○";
+            status = self.startupRetryPending
+                ? @"Retrying audio helper"
+                : @"Preparing Sound Volume";
+            break;
+        case SVCAppStateNoEligibleOutput:
+            dot = @"○";
+            status = @"Waiting for a compatible output";
+            break;
+    }
+
+    if (outputUID.length > 0) {
+        NSString *name = SVCCopyString(SVCDeviceForUID(outputUID),
+            SVCAddress(kAudioObjectPropertyName, kAudioObjectPropertyScopeGlobal));
+        if (name.length > 0) {
+            status = [NSString stringWithFormat:@"%@ — %@", status, name];
+        }
+    }
+    self.statusMenuItem.title = status;
+    NSStatusBarButton *button = self.statusItem.button;
+    button.attributedTitle = [[NSAttributedString alloc] initWithString:dot attributes:@{
+        NSForegroundColorAttributeName: color,
+        NSFontAttributeName: [NSFont systemFontOfSize:10],
+    }];
+    button.toolTip = status;
+    [button setAccessibilityLabel:[NSString stringWithFormat:@"SoundVolumeControl, %@", status]];
 }
 
 - (void)rebuildPhysicalOutputMenu {

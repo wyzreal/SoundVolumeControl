@@ -12,7 +12,11 @@ Spotlight, or Launchpad.
 
 ## Menu
 
-The speaker icon stays constant. Its menu offers **Output Device**,
+The dot beside the speaker is green when Sound Volume is routing audio, gray
+when macOS controls the output directly, and red when routing fails. An outlined
+gray dot indicates startup, retry, or an output whose capability is still
+unknown. The first menu line shows the current status, including the output name
+or error detail when available. The menu also offers **Output Device**,
 **Start at Login**, About, and Quit.
 
 ## Automatic routing
