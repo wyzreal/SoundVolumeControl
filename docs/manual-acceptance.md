@@ -1,4 +1,4 @@
-# Manual acceptance — 0.8.8 candidate
+# Manual acceptance — 0.8.9 candidate
 
 0.8.8 installed partial pass on 2026-11-19: app, helper, and driver report
 build 20; installed binaries match the audited package, signatures and reader
@@ -50,7 +50,7 @@ to install software, switch outputs, or generate test sounds without a request.
 - Physical device/model/connection:
 - Normal output and system-sounds output before installation:
 - Physical nominal sample rate (must match 48 kHz):
-- App/helper/driver versions (expected 0.8.8/build 20):
+- App/helper/driver versions (expected 0.8.9/build 21):
 - DMG checksum/source (see [validation coverage](validation.md)):
 
 Keep System Settings > Sound > Output available for recovery. Use ordinary

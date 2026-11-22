@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.9 — 2026-11-22
+
+- Use software volume for fixed-volume outputs and leave native macOS volume
+  in control on supported outputs. Routing works automatically in the background.
+- Show the current route or error in the speaker menu and through a status dot.
+- Check for stable GitHub releases with compatible installer DMGs manually or
+  automatically. Show a yellow dot when an update is available and give routing
+  errors priority. Open the release page to install the update manually.
+- Exercise update check timing, persistence, release parsing, and status priority
+  in automated tests.
+
 ## 0.8.8 — 2026-11-18
 
 - Keep volume control enabled when macOS switches to a new physical output,

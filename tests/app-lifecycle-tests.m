@@ -667,6 +667,68 @@ static void TestRoutingStatusFollowsAppState(void) {
     assert([status.title isEqualToString:@"Waiting for a compatible output"]);
 }
 
+@interface SVCStatusTestUpdateChecker : SVCUpdateChecker
+@property(nonatomic, copy) NSString *mockAvailableVersion;
+@end
+@implementation SVCStatusTestUpdateChecker
+- (NSString *)availableVersion { return self.mockAvailableVersion; }
+@end
+
+@interface SVCStatusTestButton : NSObject
+@property(nonatomic, copy) NSAttributedString *attributedTitle;
+@property(nonatomic, copy) NSString *toolTip;
+@property(nonatomic, copy) NSString *accessibilityLabel;
+@end
+@implementation SVCStatusTestButton
+@end
+
+@interface SVCStatusTestItem : NSObject
+@property(nonatomic, strong) SVCStatusTestButton *button;
+@end
+@implementation SVCStatusTestItem
+@end
+
+static void TestUpdateStatusPriority(void) {
+    SVCTestDelegate *delegate = [SVCTestDelegate new];
+    SVCStatusTestUpdateChecker *checker = [[SVCStatusTestUpdateChecker alloc]
+        initWithVersion:@"0.8.8" defaults:testDefaults];
+    delegate.updateChecker = checker;
+    SVCStatusTestItem *statusItem = [SVCStatusTestItem new];
+    SVCStatusTestButton *button = [SVCStatusTestButton new];
+    statusItem.button = button;
+    delegate.statusItem = (id)statusItem;
+    delegate.menu = [[NSMenu alloc] initWithTitle:@"SoundVolumeControl"];
+    [delegate buildMenu];
+    delegate.appState = SVCAppStateForwarding;
+    assert(delegate.availableUpdateMenuItem.hidden);
+    assert([NSColor.systemGreenColor isEqual:[button.attributedTitle
+        attribute:NSForegroundColorAttributeName atIndex:0 effectiveRange:NULL]]);
+
+    checker.mockAvailableVersion = @"0.8.9";
+    [delegate refreshUpdateMenu];
+    assert(!delegate.availableUpdateMenuItem.hidden);
+    assert([delegate.availableUpdateMenuItem.title isEqualToString:@"Update available — 0.8.9…"]);
+    assert([NSColor.systemYellowColor isEqual:[button.attributedTitle
+        attribute:NSForegroundColorAttributeName atIndex:0 effectiveRange:NULL]]);
+
+    delegate.errorDetail = @"Audio helper stopped.";
+    delegate.appState = SVCAppStateError;
+    assert([NSColor.systemRedColor isEqual:[button.attributedTitle
+        attribute:NSForegroundColorAttributeName atIndex:0 effectiveRange:NULL]]);
+    assert([delegate.statusMenuItem.title containsString:@"Audio helper stopped."]);
+    assert(!delegate.availableUpdateMenuItem.hidden);
+    assert([button.accessibilityLabel containsString:@"Update available"]);
+
+    delegate.appState = SVCAppStateNativeVolume;
+    assert([NSColor.systemYellowColor isEqual:[button.attributedTitle
+        attribute:NSForegroundColorAttributeName atIndex:0 effectiveRange:NULL]]);
+    checker.mockAvailableVersion = nil;
+    [delegate refreshUpdateMenu];
+    assert(delegate.availableUpdateMenuItem.hidden);
+    assert([NSColor.systemGrayColor isEqual:[button.attributedTitle
+        attribute:NSForegroundColorAttributeName atIndex:0 effectiveRange:NULL]]);
+}
+
 int main(void) {
     @autoreleasepool {
         NSString *suite = [NSString stringWithFormat:
@@ -718,6 +780,7 @@ int main(void) {
         TestUnknownVolumeSupport();
         TestCapabilityChangeBeforeReadiness();
         TestRoutingStatusFollowsAppState();
+        TestUpdateStatusPriority();
 
         [testDefaults removePersistentDomainForName:suite];
         method_setImplementation(method, original);

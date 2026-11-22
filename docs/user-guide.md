@@ -1,6 +1,6 @@
 # SoundVolumeControl user guide
 
-Version 0.8.8 development candidate for Apple Silicon and macOS 14+.
+Version 0.8.9 development candidate for Apple Silicon and macOS 14+.
 
 Audio uses authenticated XPC and anonymous read-only memory. Installed playback
 and hardware reliability still need [validation](validation.md).
@@ -14,7 +14,7 @@ It stays in the menu bar and has no separate window or custom volume slider.
 ## Install from the DMG
 
 1. If an older copy is running, use its **Quit SoundVolumeControl** command.
-2. Open `SoundVolumeControl-0.8.8.dmg` from a trusted source.
+2. Open `SoundVolumeControl-0.8.9.dmg` from a trusted source.
 3. Double-click **Install SoundVolumeControl.pkg**.
 4. Follow Installer and enter an administrator password.
 5. The installer adds `SoundVolumeControl.app` to `/Applications`, installs the
@@ -38,9 +38,8 @@ devices, the app automatically starts software volume control after the
 helper is ready. Use the normal macOS volume keys, mute key, and Control
 Center slider in both cases.
 
-The speaker menu offers **Output Device**, **Start at Login**, About, and
-Quit. **Automatic** follows the macOS output. Choose a specific device in
-the menu to use it as the destination.
+Under **Output Device** in the speaker menu, **Automatic** follows the macOS
+output. Choose a specific device to use it as the destination.
 
 On the first launch of this version, the app asks macOS to start it at login.
 You can change this from **Start at Login** or System Settings. **Quit**
@@ -134,8 +133,18 @@ Normal app operation never generates a tone.
 
 ## Update and uninstall
 
-Use Quit before installing an update. Install the app, driver, broker, and policy from the same
-DMG; mixed versions are deliberately rejected by signature checks.
+Choose **Check for Updates…** from the speaker menu to check now. **Check for
+Updates Automatically** is on by default and checks quietly about once a day
+while the app is running. Turning it off leaves manual checks available.
+
+A yellow dot means a newer stable release with a compatible installer is
+available. An audio routing error keeps the dot red and the menu still lists
+the available update. Choose that item to view the release and open its GitHub
+page.
+
+Download the installer DMG and quit the app before running the package. The
+package updates the app, driver, broker, and signature policy together. It
+asks for administrator approval and briefly restarts Core Audio.
 
 To uninstall, open the DMG and double-click
 **Uninstall SoundVolumeControl.command**. The uninstaller first uses the normal

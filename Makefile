@@ -23,6 +23,10 @@ SHARED_READER_TEST := $(BUILD_DIR)/shared-audio-reader-tests
 VOLUME_CURVE_TEST := $(BUILD_DIR)/volume-curve-tests
 IPC_TEST := $(BUILD_DIR)/audio-ipc-tests
 APP_TEST := $(BUILD_DIR)/app-lifecycle-tests
+UPDATE_CHECKER_TEST := $(BUILD_DIR)/update-checker-tests
+UPDATE_RELEASE_TEST := $(BUILD_DIR)/update-release-tests
+UPDATE_SOURCES := app/UpdateChecker.m app/UpdateRelease.m
+UPDATE_HEADERS := app/UpdateChecker.h app/UpdateRelease.h
 TRANSPORT := tests/legacy/SharedAudioTransport.c
 SECURE_MEMORY := common/SecureAudioMemory.c
 SECURE_WRITER := common/SecureAudioWriter.c
@@ -125,9 +129,9 @@ $(MENU_APP): $(MENU_BINARY) $(MENU_HELPER_APP) $(MENU_PLIST) $(MENU_ICON)
 	/usr/bin/codesign --force --sign - "$@"
 	touch "$@"
 
-$(MENU_BINARY): app/main.m common/StartupTiming.h driver/SoundVolumeControlIDs.h
+$(MENU_BINARY): app/main.m common/StartupTiming.h driver/SoundVolumeControlIDs.h $(UPDATE_SOURCES) $(UPDATE_HEADERS)
 	mkdir -p $(dir $@)
-	$(CC) $(FORWARDER_CFLAGS) -fobjc-arc -fblocks -Idriver app/main.m \
+	$(CC) $(FORWARDER_CFLAGS) -fobjc-arc -fblocks -Idriver app/main.m $(UPDATE_SOURCES) \
 		-framework AppKit -framework CoreAudio -framework Foundation \
 		-framework ServiceManagement -o $@
 
@@ -211,14 +215,24 @@ privacy-audit: $(DRIVER_BUNDLE) $(FORWARDER_APP) $(MENU_APP)
 	! /usr/bin/strings $(BROKER) | /usr/bin/grep -q test-revoke
 
 .PHONY: ipc-test app-test
-$(APP_TEST): tests/app-lifecycle-tests.m common/StartupTiming.h app/main.m driver/SoundVolumeControlIDs.h
+$(APP_TEST): tests/app-lifecycle-tests.m common/StartupTiming.h app/main.m driver/SoundVolumeControlIDs.h $(UPDATE_SOURCES) $(UPDATE_HEADERS)
 	mkdir -p $(BUILD_DIR)
-	$(CC) $(FORWARDER_CFLAGS) -fobjc-arc -fblocks -Idriver $< \
+	$(CC) $(FORWARDER_CFLAGS) -fobjc-arc -fblocks -Idriver $< $(UPDATE_SOURCES) \
 		-framework AppKit -framework CoreAudio -framework Foundation \
 		-framework ServiceManagement -o $@
 
-app-test: $(APP_TEST)
+$(UPDATE_CHECKER_TEST): tests/update-checker-tests.m $(UPDATE_SOURCES) $(UPDATE_HEADERS)
+	mkdir -p $(BUILD_DIR)
+	$(CC) $(FORWARDER_CFLAGS) -fobjc-arc -fblocks $< $(UPDATE_SOURCES) -framework Foundation -o $@
+
+$(UPDATE_RELEASE_TEST): tests/update-release-tests.m app/UpdateRelease.m app/UpdateRelease.h
+	mkdir -p $(BUILD_DIR)
+	$(CC) $(FORWARDER_CFLAGS) -fobjc-arc -fblocks $< app/UpdateRelease.m -framework Foundation -o $@
+
+app-test: $(APP_TEST) $(UPDATE_CHECKER_TEST) $(UPDATE_RELEASE_TEST)
 	$(APP_TEST)
+	$(UPDATE_CHECKER_TEST)
+	$(UPDATE_RELEASE_TEST)
 
 $(IPC_TEST): tests/legacy/audio-ipc-tests.c driver/SoundVolumeControl.c driver/SoundVolumeControlIDs.h $(TRANSPORT) common/SharedAudio.h tests/legacy/SharedAudioTransport.h common/VolumeCurve.h forwarder/SharedAudioReader.c forwarder/SharedAudioReader.h forwarder/AudioProcessor.c forwarder/AudioProcessor.h
 	mkdir -p $(BUILD_DIR)

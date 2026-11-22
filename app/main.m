@@ -2,6 +2,7 @@
 #import <CoreAudio/AudioHardware.h>
 #import <ServiceManagement/ServiceManagement.h>
 
+#import "UpdateChecker.h"
 #include "SoundVolumeControlIDs.h"
 #include "../common/StartupTiming.h"
 
@@ -267,6 +268,10 @@ static NSArray<NSDictionary<NSString *, id> *> *SVCPhysicalOutputs(void) {
 @property(nonatomic, strong) NSStatusItem *statusItem;
 @property(nonatomic, strong) NSMenu *menu;
 @property(nonatomic, strong) NSMenuItem *statusMenuItem;
+@property(nonatomic, strong) NSMenuItem *availableUpdateMenuItem;
+@property(nonatomic, strong) NSMenuItem *checkForUpdatesMenuItem;
+@property(nonatomic, strong) NSMenuItem *automaticUpdateChecksMenuItem;
+@property(nonatomic, strong) SVCUpdateChecker *updateChecker;
 @property(nonatomic, strong) NSMenuItem *loginMenuItem;
 @property(nonatomic, strong) NSMenuItem *outputMenuItem;
 @property(nonatomic, strong) NSTask *forwarderTask;
@@ -348,6 +353,17 @@ static OSStatus SVCDefaultDeviceChanged(
     self.menu = [[NSMenu alloc] initWithTitle:@"SoundVolumeControl"];
     self.menu.delegate = self;
     self.statusItem.menu = self.menu;
+    self.updateChecker = [[SVCUpdateChecker alloc]
+        initWithVersion:[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]
+               defaults:NSUserDefaults.standardUserDefaults];
+    __weak SVCAppDelegate *weakSelf = self;
+    self.updateChecker.stateChanged = ^{
+        [weakSelf refreshUpdateMenu];
+    };
+    self.updateChecker.manualCheckFinished = ^(SVCUpdateCheckResult result, NSString *version,
+                                                NSString *detail) {
+        [weakSelf showUpdateCheckResult:result version:version detail:detail];
+    };
     [self buildMenu];
     [self registerDefaultLoginItem];
     [self updateLoginMenu];
@@ -355,6 +371,7 @@ static OSStatus SVCDefaultDeviceChanged(
         os_log_error(OS_LOG_DEFAULT, "SoundVolumeControl: audio startup failed: %{public}@",
                      self.errorDetail);
     }
+    [self.updateChecker start];
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
@@ -378,6 +395,7 @@ static OSStatus SVCDefaultDeviceChanged(
     (void)notification;
     (void)[self restorePhysicalDefaults:NULL];
     self.quitting = YES;
+    [self.updateChecker stop];
     [self removeDefaultDeviceListeners];
     [self stopForwarder];
 }
@@ -641,8 +659,12 @@ static OSStatus SVCDefaultDeviceChanged(
         initWithTitle:@"" action:nil keyEquivalent:@""];
     self.statusMenuItem.enabled = NO;
     [self.menu addItem:self.statusMenuItem];
+
+    self.availableUpdateMenuItem = [[NSMenuItem alloc]
+        initWithTitle:@"Update available" action:@selector(showAvailableUpdate:) keyEquivalent:@""];
+    self.availableUpdateMenuItem.target = self;
+    [self.menu addItem:self.availableUpdateMenuItem];
     [self.menu addItem:[NSMenuItem separatorItem]];
-    [self updateRoutingStatus];
 
     self.outputMenuItem = [[NSMenuItem alloc]
         initWithTitle:@"Output Device" action:nil keyEquivalent:@""];
@@ -654,6 +676,18 @@ static OSStatus SVCDefaultDeviceChanged(
         keyEquivalent:@""];
     self.loginMenuItem.target = self;
     [self.menu addItem:self.loginMenuItem];
+
+    [self.menu addItem:[NSMenuItem separatorItem]];
+    self.checkForUpdatesMenuItem = [[NSMenuItem alloc]
+        initWithTitle:@"Check for Updates…" action:@selector(checkForUpdates:) keyEquivalent:@""];
+    self.checkForUpdatesMenuItem.target = self;
+    [self.menu addItem:self.checkForUpdatesMenuItem];
+
+    self.automaticUpdateChecksMenuItem = [[NSMenuItem alloc]
+        initWithTitle:@"Check for Updates Automatically"
+               action:@selector(toggleAutomaticUpdateChecks:) keyEquivalent:@""];
+    self.automaticUpdateChecksMenuItem.target = self;
+    [self.menu addItem:self.automaticUpdateChecksMenuItem];
 
     [self.menu addItem:[NSMenuItem separatorItem]];
     NSMenuItem *about = [[NSMenuItem alloc]
@@ -670,6 +704,7 @@ static OSStatus SVCDefaultDeviceChanged(
         keyEquivalent:@"q"];
     quit.target = self;
     [self.menu addItem:quit];
+    [self refreshUpdateMenu];
 }
 
 - (void)menuWillOpen:(NSMenu *)menu {
@@ -727,6 +762,14 @@ static OSStatus SVCDefaultDeviceChanged(
         }
     }
     self.statusMenuItem.title = status;
+    NSString *availableVersion = self.updateChecker.availableVersion;
+    if (availableVersion.length > 0) {
+        status = [status stringByAppendingFormat:@"\nUpdate available — %@", availableVersion];
+        if (self.appState != SVCAppStateError) {
+            color = NSColor.systemYellowColor;
+            dot = @"●";
+        }
+    }
     NSStatusBarButton *button = self.statusItem.button;
     button.attributedTitle = [[NSAttributedString alloc] initWithString:dot attributes:@{
         NSForegroundColorAttributeName: color,
@@ -734,6 +777,80 @@ static OSStatus SVCDefaultDeviceChanged(
     }];
     button.toolTip = status;
     [button setAccessibilityLabel:[NSString stringWithFormat:@"SoundVolumeControl, %@", status]];
+}
+
+- (void)refreshUpdateMenu {
+    NSString *version = self.updateChecker.availableVersion;
+    self.availableUpdateMenuItem.hidden = version.length == 0;
+    if (version.length > 0) {
+        self.availableUpdateMenuItem.title = [NSString stringWithFormat:@"Update available — %@…", version];
+    }
+    self.checkForUpdatesMenuItem.title = self.updateChecker.isChecking
+        ? @"Checking for Updates…" : @"Check for Updates…";
+    self.automaticUpdateChecksMenuItem.state = self.updateChecker.automaticChecks
+        ? NSControlStateValueOn : NSControlStateValueOff;
+    [self updateRoutingStatus];
+}
+
+- (void)checkForUpdates:(id)sender {
+    (void)sender;
+    [self.updateChecker checkManually];
+}
+
+- (void)toggleAutomaticUpdateChecks:(id)sender {
+    (void)sender;
+    [self.updateChecker setAutomaticChecksEnabled:!self.updateChecker.automaticChecks];
+}
+
+- (void)showAvailableUpdate:(id)sender {
+    (void)sender;
+    NSString *version = self.updateChecker.availableVersion;
+    if (version.length > 0) {
+        [self showUpdateCheckResult:SVCUpdateCheckAvailable version:version detail:nil];
+    }
+}
+
+- (void)showUpdateCheckResult:(SVCUpdateCheckResult)result
+                     version:(NSString *)version detail:(NSString *)detail {
+    NSAlert *alert = [[NSAlert alloc] init];
+    NSURL *releaseURL = nil;
+    NSString *installedVersion = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+    switch (result) {
+        case SVCUpdateCheckAvailable:
+            alert.messageText = @"Update available";
+            alert.informativeText = [NSString stringWithFormat:
+                @"SoundVolumeControl %@ is available. You have %@ installed. Open the GitHub release to download the installer.",
+                version, installedVersion];
+            releaseURL = SVCUpdateReleasePageURL(version);
+            if (releaseURL != nil) [alert addButtonWithTitle:@"View Release"];
+            [alert addButtonWithTitle:@"Close"];
+            break;
+        case SVCUpdateCheckCurrent:
+            alert.messageText = @"No newer release available";
+            alert.informativeText = [NSString stringWithFormat:
+                @"You have SoundVolumeControl %@ installed.", installedVersion];
+            [alert addButtonWithTitle:@"OK"];
+            break;
+        case SVCUpdateCheckMissingInstaller:
+            alert.messageText = @"Update installer unavailable";
+            alert.informativeText = [NSString stringWithFormat:
+                @"SoundVolumeControl %@ is published, but a compatible installer is unavailable.", version];
+            [alert addButtonWithTitle:@"OK"];
+            break;
+        case SVCUpdateCheckFailed:
+            alert.messageText = @"Couldn’t check for updates";
+            alert.informativeText = detail.length > 0 ? detail : @"Try again in a few minutes.";
+            [alert addButtonWithTitle:@"Try Again"];
+            [alert addButtonWithTitle:@"Close"];
+            break;
+    }
+    [NSApp activateIgnoringOtherApps:YES];
+    if ([alert runModal] != NSAlertFirstButtonReturn) return;
+    if (releaseURL != nil) {
+        [NSWorkspace.sharedWorkspace openURL:releaseURL];
+    } else if (result == SVCUpdateCheckFailed) {
+        [self.updateChecker checkManually];
+    }
 }
 
 - (void)rebuildPhysicalOutputMenu {

@@ -1,8 +1,8 @@
 # Menu-bar app
 
-- App: 0.8.8 (build 20), native arm64 development candidate
-- Embedded helper: 0.8.8 (build 20)
-- Driver: 0.8.8 (build 20)
+- App: 0.8.9 (build 21), native arm64 development candidate
+- Embedded helper: 0.8.9 (build 21)
+- Driver: 0.8.9 (build 21)
 - Small authenticated XPC broker, with no UI or audio processing
 - Minimum macOS: 14.0
 
@@ -12,12 +12,34 @@ Spotlight, or Launchpad.
 
 ## Menu
 
-The dot beside the speaker is green when Sound Volume is routing audio, gray
-when macOS controls the output directly, and red when routing fails. An outlined
-gray dot indicates startup, retry, or an output whose capability is still
-unknown. The first menu line shows the current status, including the output name
-or error detail when available. The menu also offers **Output Device**,
-**Start at Login**, About, and Quit.
+The first menu line shows the current routing status, including the output name
+or error detail when available. The dot beside the speaker follows this priority
+from highest to lowest.
+
+1. **Red** for an audio routing error.
+2. **Yellow** for an available update.
+3. **Green** when Sound Volume is routing audio or **gray** when macOS controls
+   the output directly. An outlined gray dot indicates startup, retry, or an
+   output whose capability is still unknown.
+
+When a routing error and an update are present, the menu shows both. The dot
+turns yellow once routing recovers if the update is still available. The menu
+also offers **Output Device**, **Start at Login**, About, and Quit.
+
+## Update checks
+
+**Check for Updates…** checks for a newer published stable GitHub release with
+a compatible installer DMG and reports the result. **Check for Updates
+Automatically** is on by default and remembers your preference. The app checks
+on launch when a check is due, then about once a day while it runs. Background
+checks stay quiet and retry later if they fail. You can check manually with
+automatic checks turned off.
+
+An available update stays in the menu across launches and failed checks. The
+item clears when the installed version catches up or a successful check
+confirms there is no newer compatible release. Choose the available update
+to view the release details and open the official release page. Install the
+matching package manually when you are ready for a brief Core Audio restart.
 
 ## Automatic routing
 

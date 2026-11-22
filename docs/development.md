@@ -1,6 +1,6 @@
-# Developer guide — 0.8.8
+# Developer guide — 0.8.9
 
-All app/helper/driver bundles are 0.8.8/build 20. Native arm64, macOS 14+,
+All app/helper/driver bundles are 0.8.9/build 21. Native arm64, macOS 14+,
 system frameworks only. The fourth executable is a small XPC broker.
 
 ## Components
@@ -23,7 +23,7 @@ It is not linked into production. Old shm names remain only for migration cleanu
 ```sh
 make check
 make dmg
-sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.8.8.dmg
+sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.8.9.dmg
 ```
 
 Targets: driver-test, processor-test, shared-reader-test, volume-curve-test,
@@ -80,6 +80,11 @@ registration on its first launch with the new defaults.
 The DMG uninstaller verifies restoration, unloads the broker, moves app/broker
 files to Trash, removes the driver, and restarts Core Audio. Use the complete
 DMG workflow to avoid mismatched identities and orphaned services.
+
+To make an update discoverable in the app, publish a stable GitHub Release
+tagged `vMAJOR.MINOR.PATCH` with the audited `SoundVolumeControl-MAJOR.MINOR.PATCH.dmg`
+attached. Use a unique version for each published update and keep the tag,
+bundle versions, and DMG filename in sync. Attach the DMG before publishing.
 
 ## Installed validation
 

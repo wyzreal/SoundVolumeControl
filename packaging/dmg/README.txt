@@ -1,4 +1,4 @@
-SoundVolumeControl 0.8.8 development candidate
+SoundVolumeControl 0.8.9 development candidate
 ============================================
 
 INSTALL MANUALLY
@@ -10,12 +10,16 @@ INSTALL MANUALLY
 4. The app checks the selected output on launch and whenever it changes. It
    selects Sound Volume for fixed-volume devices after the helper is ready.
    Devices with native volume control keep using the direct macOS output.
-5. Use normal macOS volume controls. The speaker menu offers Output Device,
-   Start at Login, About, and Quit.
+5. Use normal macOS volume controls. The speaker menu shows routing status and
+   offers Output Device, Start at Login, update checks, About, and Quit.
 
 Reopen the app from Applications or Spotlight when closed.
 
 WHAT CHANGED
+
+Check for Updates looks for a newer stable GitHub release. Automatic checks
+are on by default and can be turned off in the speaker menu. A yellow dot
+signals an available update. Audio routing errors take priority and show red.
 
 Routing updates in the background when macOS switches to a new physical
 output. A previous explicit destination is replaced by the new default.
