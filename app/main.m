@@ -979,10 +979,21 @@ static OSStatus SVCDefaultDeviceChanged(
                 @"SoundVolumeControl %@ is published, but a compatible installer is unavailable.", version];
             [alert addButtonWithTitle:@"OK"];
             break;
+        case SVCUpdateCheckLatestOnly:
+            alert.messageText = SVCUpdateVersionIsNewer(version, installedVersion)
+                ? @"Update available" : @"Latest public release";
+            alert.informativeText = [NSString stringWithFormat:
+                @"GitHub lists %@ as Latest. You have %@ installed. GitHub is temporarily limiting the full release check.",
+                version, installedVersion];
+            releaseURL = SVCUpdateReleasePageURL(version);
+            [alert addButtonWithTitle:@"View Release"];
+            [alert addButtonWithTitle:@"Close"];
+            break;
         case SVCUpdateCheckFailed:
             alert.messageText = @"Couldn’t check for updates";
             alert.informativeText = detail.length > 0 ? detail : @"Try again in a few minutes.";
-            [alert addButtonWithTitle:@"Try Again"];
+            releaseURL = SVCUpdateReleasesURL();
+            [alert addButtonWithTitle:@"View Releases"];
             [alert addButtonWithTitle:@"Close"];
             break;
     }
@@ -990,8 +1001,6 @@ static OSStatus SVCDefaultDeviceChanged(
     if ([alert runModal] != NSAlertFirstButtonReturn) return;
     if (releaseURL != nil) {
         [NSWorkspace.sharedWorkspace openURL:releaseURL];
-    } else if (result == SVCUpdateCheckFailed) {
-        [self.updateChecker checkManually];
     }
 }
 

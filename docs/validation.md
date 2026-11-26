@@ -5,6 +5,14 @@ behavior, and update checks. Use the
 [manual checklist](manual-acceptance.md) to record audible playback and
 hardware reliability for the 1.0 decision.
 
+## 0.9.0 update discovery test
+
+On 2026-11-22, `make check` and the DMG audit passed for 0.9.0/build 22.
+GitHub returned the installer with the expected SHA-256 digest. A live
+check using the released updater code offered 0.9.0 to version 0.8.9 and
+reported 0.9.0 as current. The Mac kept 0.8.9 installed as the test baseline.
+[v0.9.0 release](https://github.com/wyzreal/SoundVolumeControl/releases/tag/v0.9.0)
+
 ## 0.8.9 release verification
 
 On 2026-11-22, `make check` and the DMG audit passed for 0.8.9/build 21.
@@ -54,7 +62,7 @@ command compiled out of production.
 
 ```sh
 make dmg
-sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.9.1.dmg
+sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.9.2.dmg
 ```
 
 The audit mounts the DMG read-only and expands the package. It checks the

@@ -10,6 +10,8 @@ typedef NS_ENUM(NSInteger, SVCUpdateCheckResult) {
     SVCUpdateCheckCurrent,
     SVCUpdateCheckAvailable,
     SVCUpdateCheckMissingInstaller,
+    // Only GitHub's designated Latest release could be checked during a REST cooldown.
+    SVCUpdateCheckLatestOnly,
 };
 
 typedef void (^SVCUpdateCheckCompletion)(
@@ -21,16 +23,23 @@ typedef void (^SVCUpdateCheckCompletion)(
 
 BOOL SVCUpdateVersionIsNewer(NSString *candidate, NSString *installedVersion);
 NSURL * _Nullable SVCUpdateReleasePageURL(NSString *version);
+NSURL *SVCUpdateReleasesURL(void);
 
-// Returns a suspended task. The completion handler runs on the session queue.
-NSURLSessionDataTask *SVCCheckLatestRelease(NSString *installedVersion,
+@protocol SVCUpdateRequest <NSObject>
+- (void)resume;
+- (void)cancel;
+@end
+
+// Returns a suspended request. The completion handler runs on the session queue.
+id<SVCUpdateRequest> SVCCheckLatestRelease(NSString *installedVersion,
                                           SVCUpdateCheckCompletion completion);
+id<SVCUpdateRequest> SVCCheckPublicLatestRelease(NSString *installedVersion,
+                                                NSTimeInterval retryAfter,
+                                                SVCUpdateCheckCompletion completion);
 
-// Called by the HTTP client and by fixtures with recorded response shapes.
-void SVCParseLatestRelease(NSData * _Nullable data,
-                           NSHTTPURLResponse *response,
-                           NSString *installedVersion,
-                           SVCUpdateCheckCompletion completion);
+id<SVCUpdateRequest> SVCCheckLatestReleaseWithSession(NSURLSession *session,
+                                                     NSString *installedVersion,
+                                                     SVCUpdateCheckCompletion completion);
 
 NS_ASSUME_NONNULL_END
 

@@ -6,13 +6,15 @@
 
 @interface SVCUpdateChecker (Testing)
 @property(nonatomic, readonly) NSTimer *automaticCheckTimer;
-- (NSURLSessionDataTask *)makeTaskWithCompletion:(SVCUpdateCheckCompletion)completion;
+- (id<SVCUpdateRequest>)makeRequestWithAPICooldown:(NSTimeInterval)cooldown
+                                         completion:(SVCUpdateCheckCompletion)completion;
 @end
 
-@interface SVCUpdateTestTask : NSObject
+@interface SVCUpdateTestTask : NSObject <SVCUpdateRequest>
 @property(nonatomic, copy) SVCUpdateCheckCompletion completion;
 @property(nonatomic) BOOL resumed;
 @property(nonatomic) BOOL cancelled;
+@property(nonatomic) NSTimeInterval cooldown;
 @end
 
 @implementation SVCUpdateTestTask
@@ -25,12 +27,14 @@
 @end
 
 @implementation SVCUpdateTestChecker
-- (NSURLSessionDataTask *)makeTaskWithCompletion:(SVCUpdateCheckCompletion)completion {
+- (id<SVCUpdateRequest>)makeRequestWithAPICooldown:(NSTimeInterval)cooldown
+                                         completion:(SVCUpdateCheckCompletion)completion {
     if (self.requests == nil) self.requests = [NSMutableArray array];
     SVCUpdateTestTask *task = [[SVCUpdateTestTask alloc] init];
+    task.cooldown = cooldown;
     task.completion = completion;
     [self.requests addObject:task];
-    return (NSURLSessionDataTask *)task;
+    return task;
 }
 @end
 
@@ -99,8 +103,56 @@ static void TestCacheAndRetries(NSUserDefaults *defaults) {
     assert(delay > 1700 && delay <= 1800);
 
     [checker checkManually];
+    assert(checker.requests.lastObject.cooldown > 1700);
+    NSDate *deadline = [defaults objectForKey:@"releaseAPIRetryDate"];
+    Complete(checker.requests.lastObject, SVCUpdateCheckFailed, nil, 1800);
+    assert([deadline isEqual:[defaults objectForKey:@"releaseAPIRetryDate"]]);
+    assert([checker.availableVersion isEqualToString:@"0.8.9"]);
+    [defaults setObject:NSDate.distantPast forKey:@"releaseAPIRetryDate"];
+    [checker checkManually];
+    assert(checker.requests.lastObject.cooldown == 0);
     Complete(checker.requests.lastObject, SVCUpdateCheckMissingInstaller, @"0.9.0", 0);
     assert(checker.availableVersion == nil);
+    [checker stop];
+}
+
+static void TestPublicLatestDuringCooldown(NSUserDefaults *defaults) {
+    [defaults setObject:@"0.9.3" forKey:@"availableUpdateVersion"];
+    SVCUpdateTestChecker *checker = [[SVCUpdateTestChecker alloc]
+        initWithVersion:@"0.9.1" defaults:defaults];
+    [checker start];
+    assert(checker.requests.lastObject.cooldown == 0);
+    Complete(checker.requests.lastObject, SVCUpdateCheckLatestOnly, @"0.9.2", 120);
+    assert([checker.availableVersion isEqualToString:@"0.9.3"]);
+    NSDate *deadline = [defaults objectForKey:@"releaseAPIRetryDate"];
+    assert(deadline.timeIntervalSinceNow > 110 && deadline.timeIntervalSinceNow <= 120);
+    assert(fabs([checker.automaticCheckTimer.fireDate timeIntervalSinceDate:deadline]) < 1);
+    [checker stop];
+
+    // Both the timer and the manual entry point respect the server deadline
+    // after a relaunch, even if an automatic check becomes due early.
+    [defaults setObject:NSDate.distantPast forKey:@"nextAutomaticUpdateCheck"];
+    checker = [[SVCUpdateTestChecker alloc] initWithVersion:@"0.9.1" defaults:defaults];
+    [checker start];
+    assert(checker.requests.lastObject.cooldown > 110);
+    __block NSString *manualVersion = nil;
+    checker.manualCheckFinished = ^(SVCUpdateCheckResult result, NSString *version, NSString *detail) {
+        (void)detail;
+        assert(result == SVCUpdateCheckLatestOnly);
+        manualVersion = version;
+    };
+    [checker checkManually];
+    assert(checker.requests.count == 1);
+    Complete(checker.requests.lastObject, SVCUpdateCheckLatestOnly, @"0.9.1", 120);
+    assert([manualVersion isEqualToString:@"0.9.1"]);
+    assert([checker.availableVersion isEqualToString:@"0.9.3"]);
+    [checker checkManually];
+    assert(checker.requests.lastObject.cooldown > 110);
+    Complete(checker.requests.lastObject, SVCUpdateCheckLatestOnly, @"0.9.4", 120);
+    assert([manualVersion isEqualToString:@"0.9.4"]);
+    assert([checker.availableVersion isEqualToString:@"0.9.4"]);
+    assert([[defaults stringForKey:@"availableUpdateVersion"] isEqualToString:@"0.9.4"]);
+    assert([deadline isEqual:[defaults objectForKey:@"releaseAPIRetryDate"]]);
     [checker stop];
 }
 
@@ -155,6 +207,8 @@ int main(void) {
         [defaults removePersistentDomainForName:suite];
         TestManualJoinsAutomatic(defaults);
         TestCacheAndRetries(defaults);
+        [defaults removePersistentDomainForName:suite];
+        TestPublicLatestDuringCooldown(defaults);
         [defaults removePersistentDomainForName:suite];
         TestCancellation(defaults);
         [defaults removePersistentDomainForName:suite];

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.2 — 2026-11-26
+
+- Check published stable versions for the newest compatible installer.
+- When GitHub limits API requests, check the public Latest release and verify
+  its installer. Keep cached updates and respect the server’s retry deadline.
+
 ## 0.9.1 — 2026-11-26
 
 - Remember physical outputs selected in the speaker menu or macOS Sound settings.

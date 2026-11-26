@@ -5,6 +5,7 @@
 static NSString *const SVCAutomaticUpdatesKey = @"checkForUpdatesAutomatically";
 static NSString *const SVCAvailableUpdateKey = @"availableUpdateVersion";
 static NSString *const SVCNextUpdateCheckKey = @"nextAutomaticUpdateCheck";
+static NSString *const SVCReleaseAPIRetryDateKey = @"releaseAPIRetryDate";
 static const NSTimeInterval SVCUpdateCheckInterval = 24 * 60 * 60;
 static const NSTimeInterval SVCInitialUpdateRetry = 15 * 60;
 static const NSTimeInterval SVCMaximumUpdateRetry = 60 * 60;
@@ -13,7 +14,7 @@ static const NSTimeInterval SVCMaximumUpdateRetry = 60 * 60;
 @property(nonatomic, copy) NSString *installedVersion;
 @property(nonatomic, strong) NSUserDefaults *defaults;
 @property(nonatomic, copy, readwrite) NSString *availableVersion;
-@property(nonatomic, strong) NSURLSessionDataTask *task;
+@property(nonatomic, strong) id<SVCUpdateRequest> request;
 @property(nonatomic, strong) NSTimer *automaticCheckTimer;
 @property(nonatomic) BOOL running;
 @property(nonatomic) BOOL manualResultRequested;
@@ -44,7 +45,7 @@ static const NSTimeInterval SVCMaximumUpdateRetry = 60 * 60;
 }
 
 - (BOOL)isChecking {
-    return self.task != nil;
+    return self.request != nil;
 }
 
 - (void)start {
@@ -101,7 +102,16 @@ static const NSTimeInterval SVCMaximumUpdateRetry = 60 * 60;
     [[NSRunLoop mainRunLoop] addTimer:self.automaticCheckTimer forMode:NSRunLoopCommonModes];
 }
 
-- (NSURLSessionDataTask *)makeTaskWithCompletion:(SVCUpdateCheckCompletion)completion {
+- (NSTimeInterval)remainingAPICooldown {
+    id deadline = [self.defaults objectForKey:SVCReleaseAPIRetryDateKey];
+    return [deadline isKindOfClass:NSDate.class] ? MAX(0, [deadline timeIntervalSinceNow]) : 0;
+}
+
+- (id<SVCUpdateRequest>)makeRequestWithAPICooldown:(NSTimeInterval)cooldown
+                                        completion:(SVCUpdateCheckCompletion)completion {
+    if (cooldown > 0) {
+        return SVCCheckPublicLatestRelease(self.installedVersion, cooldown, completion);
+    }
     return SVCCheckLatestRelease(self.installedVersion, completion);
 }
 
@@ -111,45 +121,63 @@ static const NSTimeInterval SVCMaximumUpdateRetry = 60 * 60;
     self.automaticCheckTimer = nil;
 
     NSUInteger generation = ++self.requestGeneration;
+    NSTimeInterval cooldown = [self remainingAPICooldown];
     __weak SVCUpdateChecker *weakSelf = self;
-    self.task = [self makeTaskWithCompletion:^(
+    self.request = [self makeRequestWithAPICooldown:cooldown completion:^(
         SVCUpdateCheckResult result, NSString *version, NSString *detail, NSTimeInterval retryAfter
     ) {
         dispatch_async(dispatch_get_main_queue(), ^{
             SVCUpdateChecker *checker = weakSelf;
             if (generation != checker.requestGeneration || !checker.checking) return;
-            [checker finishCheck:result version:version detail:detail retryAfter:retryAfter];
+            [checker finishCheck:result version:version detail:detail retryAfter:retryAfter
+                      publicOnly:cooldown > 0];
         });
     }];
-    [self.task resume];
+    [self.request resume];
     [self notifyStateChanged];
 }
 
 - (void)cancelRequest {
     ++self.requestGeneration;
-    [self.task cancel];
-    self.task = nil;
+    [self.request cancel];
+    self.request = nil;
     self.manualResultRequested = NO;
 }
 
 - (void)finishCheck:(SVCUpdateCheckResult)result version:(NSString *)version
-             detail:(NSString *)detail retryAfter:(NSTimeInterval)retryAfter {
+             detail:(NSString *)detail retryAfter:(NSTimeInterval)retryAfter
+         publicOnly:(BOOL)publicOnly {
     BOOL notifyManual = self.manualResultRequested;
     self.manualResultRequested = NO;
-    self.task = nil;
+    self.request = nil;
+
+    // Only a fresh API response can set its retry deadline. Rechecking the
+    // public release during the cooldown must not push the deadline forward.
+    if (!publicOnly) {
+        if ((result == SVCUpdateCheckFailed || result == SVCUpdateCheckLatestOnly)
+            && isfinite(retryAfter) && retryAfter > 0) {
+            [self.defaults setObject:[NSDate dateWithTimeIntervalSinceNow:retryAfter]
+                              forKey:SVCReleaseAPIRetryDateKey];
+        } else {
+            [self.defaults removeObjectForKey:SVCReleaseAPIRetryDateKey];
+        }
+    }
 
     NSTimeInterval nextCheckDelay = SVCUpdateCheckInterval;
     if (result == SVCUpdateCheckFailed) {
         self.retryDelay = self.retryDelay == 0
             ? SVCInitialUpdateRetry : MIN(self.retryDelay * 2, SVCMaximumUpdateRetry);
-        nextCheckDelay = isfinite(retryAfter)
-            ? MAX(self.retryDelay, MIN(retryAfter, SVCUpdateCheckInterval)) : self.retryDelay;
+        nextCheckDelay = MAX(self.retryDelay, [self remainingAPICooldown]);
     } else {
         self.retryDelay = 0;
-        if (result == SVCUpdateCheckAvailable) {
+        BOOL latestOnly = result == SVCUpdateCheckLatestOnly;
+        if (latestOnly) nextCheckDelay = [self remainingAPICooldown];
+        NSString *knownVersion = self.availableVersion == nil ? self.installedVersion : self.availableVersion;
+        if (result == SVCUpdateCheckAvailable
+            || (latestOnly && SVCUpdateVersionIsNewer(version, knownVersion))) {
             self.availableVersion = version;
             [self.defaults setObject:version forKey:SVCAvailableUpdateKey];
-        } else {
+        } else if (!latestOnly) {
             self.availableVersion = nil;
             [self.defaults removeObjectForKey:SVCAvailableUpdateKey];
         }

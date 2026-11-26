@@ -1,6 +1,6 @@
-# Developer guide — 0.9.1
+# Developer guide — 0.9.2
 
-All app/helper/driver bundles are 0.9.1/build 23. Native arm64, macOS 14+,
+All app/helper/driver bundles are 0.9.2/build 24. Native arm64, macOS 14+,
 system frameworks only. The fourth executable is a small XPC broker.
 
 ## Components
@@ -25,7 +25,7 @@ It is not linked into production. Old shm names remain only for migration cleanu
 ```sh
 make check
 make dmg
-sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.9.1.dmg
+sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.9.2.dmg
 ```
 
 Targets: driver-test, processor-test, shared-reader-test, volume-curve-test,
@@ -94,9 +94,12 @@ To make an update discoverable in the app, publish a stable GitHub Release
 tagged `vMAJOR.MINOR.PATCH` with the audited `SoundVolumeControl-MAJOR.MINOR.PATCH.dmg`
 attached. Use a unique version for each published update and keep the tag,
 bundle versions, and DMG filename in sync. Attach the DMG before publishing.
-The app checks GitHub's latest stable release and compares the tag to its
-installed version. Share prerelease download links directly with testers.
-The update menu opens the release page for manual installation.
+The checker in 0.9.2 compares all published stable version
+tags and offers the highest version newer than the installed one that has
+the matching DMG. Mark new releases as Latest for the 0.8.9 through
+0.9.1 builds, which use that GitHub designation. Share prerelease download
+links directly with testers. The update menu opens the selected release page
+for manual installation.
 
 ## Installed validation
 

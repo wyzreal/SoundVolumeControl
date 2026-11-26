@@ -1,8 +1,8 @@
 # Menu-bar app
 
-- App: 0.9.1 (build 23), native arm64
-- Embedded helper: 0.9.1 (build 23)
-- Driver: 0.9.1 (build 23)
+- App: 0.9.2 (build 24), native arm64
+- Embedded helper: 0.9.2 (build 24)
+- Driver: 0.9.2 (build 24)
 - Small authenticated XPC broker, with no UI or audio processing
 - Minimum macOS: 14.0
 
@@ -32,11 +32,19 @@ also offers **Output Device**, **Start at Login**, About, and Quit.
 ## Update checks
 
 **Check for Updates…** checks for a newer published stable GitHub release with
-a compatible installer DMG and reports the result. **Check for Updates
-Automatically** is on by default and remembers your preference. The app checks
-on launch when a check is due, then about once a day while it runs. Background
-checks stay quiet and retry later if they fail. You can check manually with
-automatic checks turned off.
+a compatible installer DMG and reports the result. The 0.9.2 updater
+compares published stable versions numerically and offers the highest one
+with a matching installer. The 0.8.9 through 0.9.1 builds use the release
+GitHub marks as Latest.
+
+**Check for Updates Automatically** is on by default and remembers your
+preference. The app checks on launch when a check is due, then about once a
+day while it runs. Background checks stay quiet and retry later if they fail.
+You can check manually with automatic checks turned off.
+
+During a GitHub API rate limit, the checker reads the public Latest release
+and verifies its installer before offering a newer version. Full checks resume
+after the cooldown.
 
 An available update stays in the menu across launches and failed checks. The
 item clears when the installed version catches up or a successful check
