@@ -1,6 +1,6 @@
 # Architecture: output-only audio with authenticated IPC
 
-Current architecture for 0.9.0. See [validation coverage](validation.md) for
+Current architecture for 0.9.1. See [validation coverage](validation.md) for
 installed checks and the remaining hardware acceptance work.
 
 ## Audio and control paths

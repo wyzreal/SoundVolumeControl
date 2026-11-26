@@ -54,7 +54,7 @@ command compiled out of production.
 
 ```sh
 make dmg
-sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.9.0.dmg
+sh packaging/audit-dmg.sh dist/SoundVolumeControl-0.9.1.dmg
 ```
 
 The audit mounts the DMG read-only and expands the package. It checks the

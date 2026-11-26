@@ -20,6 +20,7 @@ static id TestStandardDefaults(id self, SEL selector) {
 @property NSUInteger alerts;
 @property(nonatomic, copy) NSString *mockPhysicalDefaultUID;
 @property(nonatomic, copy) NSString *mockRestoredOutputUID;
+@property(nonatomic, copy) NSArray<NSString *> *mockOutputUIDs;
 @property(nonatomic, copy) NSDictionary<NSString *, NSNumber *> *mockVolumeSupport;
 @property BOOL mockNoSoundVolumeOutput;
 @property NSUInteger directSelections;
@@ -30,11 +31,22 @@ static id TestStandardDefaults(id self, SEL selector) {
 - (void)capturePhysicalDefaults {}
 - (void)removeDefaultDeviceListeners {}
 - (void)rebuildPhysicalOutputMenu {}
+- (NSArray<NSDictionary<NSString *, id> *> *)physicalOutputs {
+    if (self.mockOutputUIDs == nil) return nil;
+    NSMutableArray *outputs = [NSMutableArray array];
+    for (NSString *uid in self.mockOutputUIDs) {
+        [outputs addObject:@{@"uid": uid, @"name": uid}];
+    }
+    return outputs;
+}
 - (NSString *)currentPhysicalDefaultUID { return self.mockPhysicalDefaultUID; }
 - (BOOL)soundVolumeIsDefaultOutput {
     return self.mockPhysicalDefaultUID == nil && !self.mockNoSoundVolumeOutput;
 }
 - (SVCVolumeSupport)volumeSupportForOutputUID:(NSString *)uid {
+    if (self.mockOutputUIDs != nil && (uid == nil || ![self.mockOutputUIDs containsObject:uid])) {
+        return SVCVolumeSupportUnknown;
+    }
     NSNumber *support = self.mockVolumeSupport[uid == nil ? @"" : uid];
     return support == nil ? SVCVolumeSupportFixed : support.integerValue;
 }
@@ -104,7 +116,6 @@ static id TestStandardDefaults(id self, SEL selector) {
     self.appState = SVCAppStateStarting;
     self.startingPhysicalDefaultUID = [self currentPhysicalDefaultUID];
     self.launchedPhysicalUID = physicalUID;
-    self.physicalOutputUID = physicalUID;
     return YES;
 }
 - (void)scheduleAfterSeconds:(NSTimeInterval)seconds action:(dispatch_block_t)action {
@@ -320,8 +331,8 @@ static void TestPhysicalOutputSwitching(void) {
         assert(delegate.appState == SVCAppStateStarting);
         assert(delegate.launchGeneration != oldGeneration);
         assert(delegate.scheduled.count == 1 && delegate.launches == 1);
-        assert([delegate.selectedPhysicalUID isEqualToString:@""]);
-        assert(delegate.physicalOutputUID.length == 0);
+        assert([delegate.selectedPhysicalUID isEqualToString:@"second-output"]);
+        assert([delegate.physicalOutputUID isEqualToString:@"second-output"]);
         [delegate runNextScheduled];
         assert(delegate.launches == 2);
         assert([delegate.launchedPhysicalUID isEqualToString:@"second-output"]);
@@ -503,6 +514,222 @@ static NSDictionary<NSString *, NSNumber *> *NativePolicySupport(void) {
         @"fixed-output": @(SVCVolumeSupportFixed),
         @"unknown-output": @(SVCVolumeSupportUnknown),
     };
+}
+
+static SVCRetryTestDelegate *LaunchWithOutputs(NSArray<NSString *> *uids,
+                                               NSString *defaultUID) {
+    SVCRetryTestDelegate *delegate = [SVCRetryTestDelegate new];
+    delegate.mockVolumeSupport = NativePolicySupport();
+    delegate.mockOutputUIDs = uids;
+    delegate.mockPhysicalDefaultUID = defaultUID;
+    delegate.mockNoSoundVolumeOutput = defaultUID == nil;
+    [delegate captureOutputInventory];
+    assert([delegate launchForwarder]);
+    return delegate;
+}
+
+static void ChooseOutput(SVCTestDelegate *delegate, NSString *uid) {
+    NSMenuItem *output = [NSMenuItem new];
+    output.representedObject = uid;
+    [delegate selectPhysicalOutput:output];
+}
+
+static void TestRememberedOutputPriority(void) {
+    [testDefaults removeObjectForKey:@"recentPhysicalDeviceUIDs"];
+    // A preference written by a previous app version wins over the HAL default.
+    [testDefaults setObject:@"other-native-output" forKey:@"physicalDeviceUID"];
+    NSArray *all = @[@"fixed-output", @"native-output", @"other-native-output"];
+    NSArray *remaining = @[@"fixed-output", @"native-output"];
+    SVCRetryTestDelegate *delegate = LaunchWithOutputs(all, @"fixed-output");
+    assert([delegate.directPhysicalUID isEqualToString:@"other-native-output"]);
+    ChooseOutput(delegate, @"native-output");
+    ChooseOutput(delegate, @"other-native-output");
+
+    // macOS can fall back to a third device on disconnect. Prefer the previous
+    // choice among connected outputs and keep the unavailable one remembered.
+    delegate.mockOutputUIDs = remaining;
+    delegate.mockPhysicalDefaultUID = @"fixed-output";
+    [delegate defaultDevicesDidChange];
+    assert([delegate.currentPhysicalDefaultUID isEqualToString:@"native-output"]);
+    assert([delegate.selectedPhysicalUID isEqualToString:@"other-native-output"]);
+    NSUInteger generation = delegate.launchGeneration;
+    [delegate defaultDevicesDidChange];
+    assert(delegate.launchGeneration == generation);
+
+    // Read persisted history in a fresh delegate while the last choice is away.
+    delegate = LaunchWithOutputs(remaining, @"fixed-output");
+    assert([delegate.directPhysicalUID isEqualToString:@"native-output"]);
+    assert([delegate.selectedPhysicalUID isEqualToString:@"other-native-output"]);
+    delegate.mockOutputUIDs = all;
+    [delegate defaultDevicesDidChange];
+    assert([delegate.currentPhysicalDefaultUID isEqualToString:@"other-native-output"]);
+
+    ChooseOutput(delegate, @"");
+    delegate = LaunchWithOutputs(all, @"fixed-output");
+    assert(delegate.selectedPhysicalUID.length == 0);
+    assert([delegate.launchedPhysicalUID isEqualToString:@"fixed-output"]);
+}
+
+static void TestNewlyConnectedOutputs(void) {
+    [testDefaults removeObjectForKey:@"recentPhysicalDeviceUIDs"];
+    [testDefaults setObject:@"" forKey:@"physicalDeviceUID"];
+    SVCRetryTestDelegate *delegate = LaunchWithOutputs(@[@"native-output"], @"native-output");
+    // A new fixed-volume output should acquire the helper, even when macOS
+    // keeps the same native default and emits only a device-list notification.
+    delegate.mockOutputUIDs = @[@"native-output", @"fixed-output"];
+    [delegate defaultDevicesDidChange];
+    assert([delegate.selectedPhysicalUID isEqualToString:@"fixed-output"]);
+    assert(delegate.scheduled.count == 1);
+    NSUInteger generation = delegate.launchGeneration;
+    delegate.mockOutputUIDs = @[@"fixed-output", @"native-output"];
+    [delegate defaultDevicesDidChange];
+    assert(delegate.launchGeneration == generation && delegate.scheduled.count == 1);
+    [delegate runNextScheduled];
+    assert([delegate.launchedPhysicalUID isEqualToString:@"fixed-output"]);
+    [delegate consumeForwarderLine:@"Forwarder ready."];
+    [delegate consumeForwarderLine:@"Forwarding is active."];
+    assert(delegate.forwarderReady && delegate.mockPhysicalDefaultUID == nil);
+
+    // Sound Volume still owns the default when a native device is attached.
+    // A failed list read must not cause existing outputs to appear newly added.
+    delegate.mockOutputUIDs = nil;
+    [delegate defaultDevicesDidChange];
+    delegate.mockOutputUIDs = @[@"other-native-output", @"native-output", @"fixed-output"];
+    delegate.mockRestoredOutputUID = @"fixed-output";
+    [delegate defaultDevicesDidChange];
+    assert([delegate.selectedPhysicalUID isEqualToString:@"other-native-output"]);
+    assert([delegate.currentPhysicalDefaultUID isEqualToString:@"other-native-output"]);
+    assert(delegate.appState == SVCAppStateNativeVolume && !delegate.forwarderReady);
+
+    // A queued device notification after quitting cannot change the preference.
+    [delegate applicationWillTerminate:[NSNotification
+        notificationWithName:NSApplicationWillTerminateNotification object:nil]];
+    delegate.mockOutputUIDs = @[@"last-minute-output", @"other-native-output"];
+    [delegate defaultDevicesDidChange];
+    assert([delegate.selectedPhysicalUID isEqualToString:@"other-native-output"]);
+    assert(delegate.scheduled.count == 0);
+}
+
+static void TestReconnectAfterAllOutputsDisappear(void) {
+    [testDefaults removeObjectForKey:@"recentPhysicalDeviceUIDs"];
+    [testDefaults setObject:@"native-output" forKey:@"physicalDeviceUID"];
+    SVCRetryTestDelegate *delegate = LaunchWithOutputs(@[@"native-output"], @"native-output");
+    delegate.mockOutputUIDs = @[];
+    delegate.mockPhysicalDefaultUID = nil;
+    delegate.mockNoSoundVolumeOutput = YES;
+    [delegate defaultDevicesDidChange];
+    assert(delegate.appState == SVCAppStateNoEligibleOutput);
+    assert([delegate.selectedPhysicalUID isEqualToString:@"native-output"]);
+    delegate.mockOutputUIDs = @[@"other-native-output"];
+    [delegate defaultDevicesDidChange];
+    assert(delegate.appState == SVCAppStateNativeVolume);
+    assert([delegate.currentPhysicalDefaultUID isEqualToString:@"other-native-output"]);
+}
+
+static void TestConnectionNotificationOrdering(void) {
+    for (NSNumber *listFirst in @[@YES, @NO]) {
+        [testDefaults removeObjectForKey:@"recentPhysicalDeviceUIDs"];
+        [testDefaults setObject:@"native-output" forKey:@"physicalDeviceUID"];
+        SVCRetryTestDelegate *delegate = LaunchWithOutputs(@[@"native-output"], @"native-output");
+        NSArray *connected = @[@"native-output", @"fixed-output"];
+        if (listFirst.boolValue) delegate.mockOutputUIDs = connected;
+        else delegate.mockPhysicalDefaultUID = @"fixed-output";
+        [delegate defaultDevicesDidChange];
+        delegate.mockPhysicalDefaultUID = @"fixed-output";
+        delegate.mockOutputUIDs = connected;
+        [delegate defaultDevicesDidChange];
+        [delegate defaultDevicesDidChange];
+        while (delegate.scheduled.count > 0) [delegate runNextScheduled];
+        assert(delegate.launches == 1);
+        assert([delegate.launchedPhysicalUID isEqualToString:@"fixed-output"]);
+        assert([delegate.selectedPhysicalUID isEqualToString:@"fixed-output"]);
+    }
+}
+
+static void TestSimultaneousConnections(void) {
+    NSArray *expected = @[@"fixed-output", @"remembered-output", @"first-output"];
+    for (NSString *winner in expected) {
+        [testDefaults setObject:@"native-output" forKey:@"physicalDeviceUID"];
+        NSArray *history = [winner isEqualToString:@"first-output"] ? @[] : @[@"remembered-output"];
+        [testDefaults setObject:history forKey:@"recentPhysicalDeviceUIDs"];
+        SVCRetryTestDelegate *delegate = LaunchWithOutputs(@[@"native-output"], @"native-output");
+        // The inventory arrives in menu order. The current HAL default and
+        // earlier selections have priority over the first new item.
+        delegate.mockOutputUIDs = @[@"first-output", @"fixed-output", @"native-output", @"remembered-output"];
+        if ([winner isEqualToString:@"fixed-output"]) delegate.mockPhysicalDefaultUID = winner;
+        [delegate defaultDevicesDidChange];
+        assert([delegate.selectedPhysicalUID isEqualToString:winner]);
+        assert(delegate.scheduled.count == 1);
+        [delegate runNextScheduled];
+        assert([delegate.launchedPhysicalUID isEqualToString:winner]);
+    }
+}
+
+static void TestDisconnectNotificationOrdering(void) {
+    for (NSNumber *listFirst in @[@YES, @NO]) {
+        NSString *preferred = @"other-native-output";
+        NSString *previousChoice = @"fixed-output";
+        NSString *systemFallback = @"native-output";
+        [testDefaults setObject:preferred forKey:@"physicalDeviceUID"];
+        [testDefaults setObject:@[preferred, previousChoice] forKey:@"recentPhysicalDeviceUIDs"];
+        SVCRetryTestDelegate *delegate = LaunchWithOutputs(@[preferred, previousChoice, systemFallback], preferred);
+        NSArray *remaining = @[previousChoice, systemFallback];
+        if (listFirst.boolValue) delegate.mockOutputUIDs = remaining;
+        else delegate.mockPhysicalDefaultUID = systemFallback;
+        [delegate audioHardwareDidChange];
+        delegate.mockPhysicalDefaultUID = systemFallback;
+        delegate.mockOutputUIDs = remaining;
+        [delegate audioHardwareDidChange];
+        while (delegate.scheduled.count > 0) [delegate runNextScheduled];
+        assert([delegate.selectedPhysicalUID isEqualToString:preferred]);
+        assert([delegate.launchedPhysicalUID isEqualToString:previousChoice]);
+        assert(delegate.launches == 1);
+    }
+}
+
+static void TestForwarderReportsDisconnectBeforeDeviceList(void) {
+    NSString *preferred = @"fixed-output";
+    NSString *previousChoice = @"other-native-output";
+    NSString *systemFallback = @"native-output";
+    for (NSNumber *exitFirst in @[@YES, @NO]) {
+        [testDefaults setObject:preferred forKey:@"physicalDeviceUID"];
+        [testDefaults setObject:@[preferred, previousChoice] forKey:@"recentPhysicalDeviceUIDs"];
+        SVCRetryTestDelegate *delegate = LaunchWithOutputs(@[preferred, previousChoice, systemFallback], preferred);
+        [delegate consumeForwarderLine:@"Forwarder ready."];
+        [delegate consumeForwarderLine:@"Forwarding is active."];
+        assert(delegate.appState == SVCAppStateForwarding && delegate.launches == 1);
+
+        delegate.mockPhysicalDefaultUID = systemFallback;
+        NSUInteger generation = delegate.launchGeneration;
+        if (exitFirst.boolValue) {
+            [delegate forwarderDidTerminateWithStatus:0 reason:NSTaskTerminationReasonExit generation:generation];
+        } else {
+            [delegate consumeForwarderLine:@"Sound Volume is no longer selected; stopping physical IO."];
+        }
+        assert([delegate.selectedPhysicalUID isEqualToString:preferred]);
+        delegate.mockOutputUIDs = @[previousChoice, systemFallback];
+        while (delegate.scheduled.count > 0) [delegate runNextScheduled];
+        assert([delegate.selectedPhysicalUID isEqualToString:preferred]);
+        assert([delegate.currentPhysicalDefaultUID isEqualToString:previousChoice]);
+        assert(delegate.appState == SVCAppStateNativeVolume && delegate.directSelections == 1);
+        assert(!delegate.forwarderReady && delegate.launches == 1);
+    }
+}
+
+static void TestDelayedOutputCapability(void) {
+    [testDefaults setObject:@"native-output" forKey:@"physicalDeviceUID"];
+    SVCRetryTestDelegate *delegate = LaunchWithOutputs(@[@"native-output"], @"native-output");
+    delegate.mockOutputUIDs = @[@"native-output", @"unknown-output"];
+    [delegate audioHardwareDidChange];
+    [delegate runNextScheduled];
+    assert(delegate.appState == SVCAppStateNoEligibleOutput);
+    assert([delegate.selectedPhysicalUID isEqualToString:@"unknown-output"]);
+    assert([delegate.currentPhysicalDefaultUID isEqualToString:@"native-output"]);
+    // No further HAL event occurs when the new device's controls become readable.
+    delegate.mockVolumeSupport = @{@"unknown-output": @(SVCVolumeSupportNative)};
+    while (delegate.scheduled.count > 0) [delegate runNextScheduled];
+    assert(delegate.appState == SVCAppStateNativeVolume && delegate.launches == 0);
+    assert([delegate.directPhysicalUID isEqualToString:@"unknown-output"]);
 }
 
 static void TestNativeLaunchAndSelection(void) {
@@ -779,12 +1006,20 @@ int main(void) {
         TestNativeAndFixedTransitions();
         TestUnknownVolumeSupport();
         TestCapabilityChangeBeforeReadiness();
+        TestRememberedOutputPriority();
+        TestNewlyConnectedOutputs();
+        TestReconnectAfterAllOutputsDisappear();
+        TestConnectionNotificationOrdering();
+        TestSimultaneousConnections();
+        TestDisconnectNotificationOrdering();
+        TestForwarderReportsDisconnectBeforeDeviceList();
+        TestDelayedOutputCapability();
         TestRoutingStatusFollowsAppState();
         TestUpdateStatusPriority();
 
         [testDefaults removePersistentDomainForName:suite];
         method_setImplementation(method, original);
-        puts("app-lifecycle-tests: PASS (native volume policy, late startup recovery, source switching, output selection, bounded backoff, cancellation, safe routing, ready handshake, stale output, safe Quit)");
+        puts("app-lifecycle-tests: PASS (native volume policy, late startup recovery, source switching, output selection history, device hotplug, bounded backoff, cancellation, safe routing, ready handshake, stale output, safe Quit)");
     }
     return 0;
 }

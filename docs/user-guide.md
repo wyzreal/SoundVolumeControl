@@ -1,6 +1,6 @@
 # SoundVolumeControl user guide
 
-Version 0.9.0 (build 22) for Apple Silicon and macOS 14+.
+Version 0.9.1 (build 23) for Apple Silicon and macOS 14+.
 
 Audio uses authenticated XPC and anonymous read-only memory. Installed playback
 and hardware reliability still need [validation](validation.md).
@@ -14,8 +14,8 @@ It stays in the menu bar and has no separate window or custom volume slider.
 ## Install from the DMG
 
 1. If an older copy is running, use its **Quit SoundVolumeControl** command.
-2. Download `SoundVolumeControl-0.9.0.dmg` and `SHA256SUMS.txt`, then open the
-   DMG. [0.9.0 GitHub release](https://github.com/wyzreal/SoundVolumeControl/releases/tag/v0.9.0)
+2. Download `SoundVolumeControl-0.9.1.dmg` and `SHA256SUMS.txt`, then open the
+   DMG. [0.9.1 GitHub release](https://github.com/wyzreal/SoundVolumeControl/releases/tag/v0.9.1)
 3. Double-click **Install SoundVolumeControl.pkg**.
 4. Follow Installer and enter an administrator password.
 5. The installer adds `SoundVolumeControl.app` to `/Applications`, installs the
@@ -39,8 +39,15 @@ devices, the app automatically starts software volume control after the
 helper is ready. Use the normal macOS volume keys, mute key, and Control
 Center slider in both cases.
 
-Under **Output Device** in the speaker menu, **Automatic** follows the macOS
-output. Choose a specific device to use it as the destination.
+Choose a destination under **Output Device** in the speaker menu. The
+app remembers choices made there and in macOS Sound settings.
+When you reopen the app, it selects your last choice if connected. Otherwise
+it tries your other remembered outputs, most recent first, then uses the
+current macOS physical output.
+
+Connecting or reconnecting a physical output switches audio to that device
+automatically. Choose **Automatic** to follow the current macOS output again
+until you connect another output or choose a device yourself.
 
 The app requests **Start at Login** by default on first launch. macOS may
 require approval. You can change the setting from the speaker menu or System

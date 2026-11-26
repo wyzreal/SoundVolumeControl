@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.1 — 2026-11-26
+
+- Remember physical outputs selected in the speaker menu or macOS Sound settings.
+  At launch or after a disconnect, try the most recently selected connected
+  output, then the current macOS physical output.
+- Switch to newly connected or reconnected physical outputs, including when
+  macOS keeps the previous default.
+
 ## 0.9.0 — 2026-11-22
 
 - Package build 22 as the next stable GitHub release so the installed 0.8.9

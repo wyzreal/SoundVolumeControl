@@ -1,8 +1,8 @@
 # Menu-bar app
 
-- App: 0.9.0 (build 22), native arm64
-- Embedded helper: 0.9.0 (build 22)
-- Driver: 0.9.0 (build 22)
+- App: 0.9.1 (build 23), native arm64
+- Embedded helper: 0.9.1 (build 23)
+- Driver: 0.9.1 (build 23)
 - Small authenticated XPC broker, with no UI or audio processing
 - Minimum macOS: 14.0
 
@@ -74,10 +74,17 @@ read back and verified. Quit reports an error if restoration fails.
 
 ## Output selection
 
-Automatic follows the current physical default. An explicit menu selection
-stores the device UID and immediately applies the routing policy. An external
-physical-output change supersedes an explicit selection and returns the app
-to Automatic.
+The app remembers physical outputs by device UID. Selecting an
+output in the menu or in macOS Sound settings gives it first priority at the
+next launch. If it is disconnected, the app tries previously selected
+outputs in order of most recent selection, then uses the current macOS
+physical output. Choosing **Automatic** follows the macOS physical output
+until another output connects or a specific device is selected.
+
+Connecting or reconnecting a physical output selects it immediately. When
+several outputs appear together, the app prefers the macOS default if it is
+among them, then the most recently chosen of those outputs, then the first
+one in menu order.
 
 Duplicate notifications during startup leave the current attempt in place. A
 different physical default replaces the pending attempt. Helper route-loss

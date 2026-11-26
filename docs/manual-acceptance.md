@@ -1,4 +1,4 @@
-# Manual acceptance — 0.9.0 candidate
+# Manual acceptance — 0.9.1 candidate
 
 ## Historical verification
 
@@ -56,7 +56,7 @@ to install software, switch outputs, or generate test sounds without a request.
 - Physical device/model/connection:
 - Normal output and system-sounds output before installation:
 - Physical nominal sample rate (software routing requires 48 kHz):
-- App/helper/driver versions (expected 0.9.0/build 22):
+- App/helper/driver versions (expected 0.9.1/build 23):
 - DMG checksum/source (see [validation coverage](validation.md)):
 
 Keep System Settings > Sound > Output available for recovery. Use ordinary
@@ -141,5 +141,5 @@ Quit the menu app first; only one authenticated reader can connect. The helper
 must match the installed signature policy. No tone is generated in normal use.
 
 Record the final decision as PASS, FAIL, or NOT RUN and link a dated validation
-record. The 0.9.0 package is ad-hoc signed and hardware acceptance
+record. The 0.9.1 package is ad-hoc signed and hardware acceptance
 remains open.
