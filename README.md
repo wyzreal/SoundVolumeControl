@@ -4,10 +4,12 @@
 
 # SoundVolumeControl — macOS volume control for external monitors
 
-When macOS grays out the volume slider for an external monitor, SoundVolumeControl
-lets you use your Mac’s volume keys, mute key, and Control Center to adjust the
-monitor’s speakers. The menu bar app lowers the outgoing audio level in software
-for fixed-volume HDMI, DisplayPort, and USB-C displays.
+SoundVolumeControl is an extremely lightweight menu bar app for external audio
+outputs whose volume macOS can’t adjust directly. It lets you use your Mac’s
+volume keys, mute key, and Control Center with fixed-volume HDMI, DisplayPort,
+and USB-C monitor speakers.
+
+The app uses native macOS frameworks, and the v0.9.2 installer is a **2.1 MB download**.
 
 [Download the latest macOS installer and SHA-256 checksum](https://github.com/wyzreal/SoundVolumeControl/releases/latest)
 
@@ -31,14 +33,20 @@ The installer requests administrator access, installs the matching app, driver,
 broker, and signature policy, briefly restarts Core Audio, and opens the app.
 The DMG contains ad-hoc-signed components. [Installation guide](docs/user-guide.md#install-from-the-dmg)
 
-The app uses the direct macOS route for devices with native volume control and
-starts the helper automatically for supported fixed-volume outputs. Use the
-normal macOS volume controls. A green dot reports active Sound Volume routing
-in software. Check playback at the display or speakers to confirm audible
-output.
-
 Choose **Quit SoundVolumeControl** to restore the physical outputs. To
 uninstall, run **Uninstall SoundVolumeControl.command** from the DMG.
+
+## How do I change HDMI volume on my Mac when the system slider is grayed out?
+
+Choose your monitor under **Output Device** in the app’s speaker menu. When the
+menu shows **Routing through Sound Volume**, use your keyboard volume keys or
+the Control Center slider. The app adjusts the audio signal before it reaches
+the monitor, so the monitor’s own volume setting stays the same. The same steps
+apply to fixed-volume DisplayPort and USB-C outputs.
+
+The green status dot shows that software routing is active. Play audio through
+the monitor to confirm sound. Outputs that support native macOS volume control
+use the direct audio route automatically.
 
 ## Build from source
 
