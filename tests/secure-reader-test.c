@@ -6,10 +6,26 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
+#include <time.h>
+
+static volatile sig_atomic_t stopRequested;
+static void CancelPendingOpen(int sig) {
+    (void)sig;
+    stopRequested = 1;
+}
 
 int main(int argc, char **argv) {
     assert(argc == 4);
     alarm(35);
+    if (strcmp(argv[3], "cancel") == 0) {
+        signal(SIGALRM, CancelPendingOpen);
+        ualarm(300000, 0);
+        uint64_t start = clock_gettime_nsec_np(CLOCK_MONOTONIC);
+        assert(SVCReaderOpenCancellable(argv[1], argv[2], false,
+            SVC_BUFFER_STARTUP_SECONDS, &stopRequested) == NULL && errno == ECANCELED);
+        assert(clock_gettime_nsec_np(CLOCK_MONOTONIC) - start < 3ULL * 1000000000);
+        return 0;
+    }
     bool denied = strcmp(argv[3], "deny") == 0;
     bool revoke = strcmp(argv[3], "revoke") == 0;
     bool timeout = strcmp(argv[3], "timeout") == 0;

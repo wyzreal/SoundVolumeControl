@@ -148,7 +148,7 @@ static SVCRetryTestDelegate *StartRetryFixture(void) {
 }
 
 static void TemporaryStartupExit(SVCRetryTestDelegate *delegate) {
-    [delegate consumeForwarderLine:@"Driver buffer failed: Operation timed out (60)."];
+    [delegate consumeForwarderLine:@"{\"event\": \"error\", \"detail\": \"Driver buffer failed: Operation timed out (60).\"}"];
     [delegate forwarderDidTerminateWithStatus:EX_TEMPFAIL
                                       reason:NSTaskTerminationReasonExit
                                   generation:delegate.launchGeneration];
@@ -168,16 +168,16 @@ static void TestColdStartupRecovery(void) {
     }
     assert(delegate.launches == expectedDelays.count + 1);
     assert(delegate.restorations == expectedDelays.count);
-    [delegate consumeForwarderLine:@"Forwarder ready."];
+    [delegate consumeForwarderLine:@"{\"event\":\"ready\"}"];
     assert(delegate.selections == 1 && delegate.forwarderReady);
-    [delegate consumeForwarderLine:@"Forwarding is active."];
+    [delegate consumeForwarderLine:@"{\"event\":\"active\"}"];
     assert(delegate.startupRetryDelay == 0);
     assert(delegate.appState == SVCAppStateForwarding);
     [delegate forwarderStartupTimedOutForGeneration:delegate.launchGeneration];
     assert(delegate.scheduled.count == 0);
 
     // A transient exit code after readiness cannot restart a revoked session.
-    [delegate consumeForwarderLine:@"Audio broker failed: connection revoked."];
+    [delegate consumeForwarderLine:@"{\"event\": \"error\", \"detail\": \"Audio broker failed: connection revoked.\"}"];
     assert(delegate.appState == SVCAppStateError);
     [delegate forwarderDidTerminateWithStatus:EX_TEMPFAIL
                                       reason:NSTaskTerminationReasonExit
@@ -261,17 +261,17 @@ static void TestWatchdogAndFailureBoundaries(void) {
 
     delegate = StartRetryFixture();
     delegate.mockRestoredOutputUID = @"fixed-output";
-    [delegate consumeForwarderLine:@"Forwarder ready."];
+    [delegate consumeForwarderLine:@"{\"event\":\"ready\"}"];
     [delegate forwarderStartupTimedOutForGeneration:delegate.launchGeneration];
     assert(delegate.startupRetryPending && delegate.scheduled.count == 1);
     [delegate runNextScheduled];
     assert(delegate.launches == 2);
-    [delegate consumeForwarderLine:@"Forwarder ready."];
+    [delegate consumeForwarderLine:@"{\"event\":\"ready\"}"];
     [delegate forwarderStartupTimedOutForGeneration:delegate.launchGeneration];
     assert([delegate.delays.lastObject isEqual:@2]);
     [delegate runNextScheduled];
-    [delegate consumeForwarderLine:@"Forwarder ready."];
-    [delegate consumeForwarderLine:@"Forwarding is active."];
+    [delegate consumeForwarderLine:@"{\"event\":\"ready\"}"];
+    [delegate consumeForwarderLine:@"{\"event\":\"active\"}"];
     [delegate forwarderDidTerminateWithStatus:SIGKILL
                                       reason:NSTaskTerminationReasonUncaughtSignal
                                   generation:delegate.launchGeneration];
@@ -298,8 +298,8 @@ static SVCRetryTestDelegate *StartPhysicalFixture(BOOL ready) {
     assert([delegate launchForwarder]);
     [delegate consumeForwarderLine:@"Physical output: First (first-output)"];
     if (ready) {
-        [delegate consumeForwarderLine:@"Forwarder ready."];
-        [delegate consumeForwarderLine:@"Forwarding is active."];
+        [delegate consumeForwarderLine:@"{\"event\":\"ready\"}"];
+        [delegate consumeForwarderLine:@"{\"event\":\"active\"}"];
         assert(delegate.forwarderReady && delegate.selections == 1);
     }
     return delegate;
@@ -316,7 +316,7 @@ static void TestPhysicalOutputSwitching(void) {
             [delegate defaultDevicesDidChange];
         } else if (firstEvent == 1) {
             [delegate consumeForwarderLine:
-                @"Sound Volume is no longer selected; stopping physical IO."];
+                @"{\"event\":\"deselected\"}"];
         } else {
             [delegate forwarderDidTerminateWithStatus:0
                                               reason:NSTaskTerminationReasonExit
@@ -324,7 +324,7 @@ static void TestPhysicalOutputSwitching(void) {
         }
         [delegate defaultDevicesDidChange];
         [delegate consumeForwarderLine:
-            @"Sound Volume is no longer selected; stopping physical IO."];
+            @"{\"event\":\"deselected\"}"];
         [delegate forwarderDidTerminateWithStatus:0
                                           reason:NSTaskTerminationReasonExit
                                       generation:oldGeneration];
@@ -337,8 +337,8 @@ static void TestPhysicalOutputSwitching(void) {
         assert(delegate.launches == 2);
         assert([delegate.launchedPhysicalUID isEqualToString:@"second-output"]);
         [delegate consumeForwarderLine:@"Physical output: Second (second-output)"];
-        [delegate consumeForwarderLine:@"Forwarder ready."];
-        [delegate consumeForwarderLine:@"Forwarding is active."];
+        [delegate consumeForwarderLine:@"{\"event\":\"ready\"}"];
+        [delegate consumeForwarderLine:@"{\"event\":\"active\"}"];
         assert(delegate.selections == 2 && delegate.forwarderReady);
         assert(delegate.appState == SVCAppStateForwarding);
     }
@@ -360,8 +360,8 @@ static void TestSwitchingDuringStartup(void) {
         assert(delegate.scheduled.count == 1 && delegate.launches == 1);
         [delegate runNextScheduled];
         assert([delegate.launchedPhysicalUID isEqualToString:@"second-output"]);
-        [delegate consumeForwarderLine:@"Forwarder ready."];
-        [delegate consumeForwarderLine:@"Forwarding is active."];
+        [delegate consumeForwarderLine:@"{\"event\":\"ready\"}"];
+        [delegate consumeForwarderLine:@"{\"event\":\"active\"}"];
         assert(delegate.selections == 1 && delegate.appState == SVCAppStateForwarding);
     }
 
@@ -369,7 +369,7 @@ static void TestSwitchingDuringStartup(void) {
     // physical destination is a new change, before the active acknowledgement.
     for (NSNumber *waiting in @[@NO, @YES]) {
         SVCRetryTestDelegate *delegate = StartPhysicalFixture(NO);
-        [delegate consumeForwarderLine:@"Forwarder ready."];
+        [delegate consumeForwarderLine:@"{\"event\":\"ready\"}"];
         if (waiting.boolValue) {
             [delegate consumeForwarderLine:
                 @"Waiting for Sound Volume to become the macOS output."];
@@ -389,7 +389,7 @@ static void TestSwitchingDuringStartup(void) {
     // not select Sound Volume for the destination that was just superseded.
     SVCRetryTestDelegate *delegate = StartPhysicalFixture(NO);
     delegate.mockPhysicalDefaultUID = @"second-output";
-    [delegate consumeForwarderData:[@"Forwarder ready.\nForwarding is active.\n"
+    [delegate consumeForwarderData:[@"{\"event\":\"ready\"}\n{\"event\":\"active\"}\n"
         dataUsingEncoding:NSUTF8StringEncoding]];
     assert(delegate.selections == 0 && !delegate.forwarderReady);
     assert(delegate.appState == SVCAppStateStarting);
@@ -461,7 +461,7 @@ static void TestSourceChangeFailureBoundaries(void) {
                                @(NSTaskTerminationReasonUncaughtSignal)]) {
         SVCRetryTestDelegate *delegate = StartPhysicalFixture(NO);
         delegate.mockPhysicalDefaultUID = @"second-output";
-        [delegate consumeForwarderLine:@"AudioDeviceStart failed: old device removed"];
+        [delegate consumeForwarderLine:@"{\"event\": \"error\", \"detail\": \"AudioDeviceStart failed: old device removed\"}"];
         [delegate forwarderDidTerminateWithStatus:1 reason:reason.integerValue
                                       generation:delegate.launchGeneration];
         assert(delegate.selections == 0);
@@ -485,7 +485,7 @@ static void TestSourceChangeFailureBoundaries(void) {
                                               reason:NSTaskTerminationReasonExit
                                           generation:generation];
         } else {
-            [delegate consumeForwarderData:[@"Forwarder ready.\nForwarding is active.\n"
+            [delegate consumeForwarderData:[@"{\"event\":\"ready\"}\n{\"event\":\"active\"}\n"
                 dataUsingEncoding:NSUTF8StringEncoding]];
         }
         assert(!delegate.forwarderReady);
@@ -495,7 +495,7 @@ static void TestSourceChangeFailureBoundaries(void) {
         assert(delegate.scheduled.count == 0 && delegate.lineBuffer.length == 0);
         assert([delegate.errorDetail isEqualToString:@"test restore failure"]);
         assert(delegate.alerts == 0);
-        [delegate consumeForwarderLine:@"Forwarder ready."];
+        [delegate consumeForwarderLine:@"{\"event\":\"ready\"}"];
         assert(delegate.selections == selections);
         [delegate defaultDevicesDidChange];
         assert(delegate.scheduled.count == 0);
@@ -570,9 +570,53 @@ static void TestRememberedOutputPriority(void) {
     assert([delegate.launchedPhysicalUID isEqualToString:@"fixed-output"]);
 }
 
+static void TestAutomaticFollowsSystemDefault(void) {
+    [testDefaults removeObjectForKey:@"physicalDeviceUID"];
+    SVCRetryTestDelegate *delegate = LaunchWithOutputs(@[@"native-output"], @"native-output");
+    assert(delegate.selectedPhysicalUID.length == 0);
+
+    // A newly attached device only becomes the destination if macOS selects it.
+    delegate.mockOutputUIDs = @[@"native-output", @"fixed-output"];
+    [delegate defaultDevicesDidChange];
+    assert(delegate.launches == 0 && delegate.scheduled.count == 0);
+    assert([delegate.physicalOutputUID isEqualToString:@"native-output"]);
+    delegate.mockPhysicalDefaultUID = @"fixed-output";
+    [delegate defaultDevicesDidChange];
+    [delegate runNextScheduled];
+    assert([delegate.launchedPhysicalUID isEqualToString:@"fixed-output"]);
+    assert(delegate.selectedPhysicalUID.length == 0);
+    [delegate consumeForwarderLine:@"{\"event\":\"ready\"}"];
+    [delegate consumeForwarderLine:@"{\"event\":\"active\"}"];
+
+    // Sound Volume now owns the default. Keep its backing output on arrival,
+    // then recover the remaining physical route if that backing output leaves.
+    delegate.mockOutputUIDs = @[@"native-output", @"fixed-output", @"other-native-output"];
+    [delegate defaultDevicesDidChange];
+    assert(delegate.forwarderReady && delegate.launches == 1);
+    assert([delegate.physicalOutputUID isEqualToString:@"fixed-output"]);
+    delegate.mockOutputUIDs = @[@"native-output", @"other-native-output"];
+    delegate.mockRestoredOutputUID = @"other-native-output";
+    [delegate defaultDevicesDidChange];
+    assert(delegate.appState == SVCAppStateNativeVolume);
+    assert([delegate.physicalOutputUID isEqualToString:@"other-native-output"]);
+    assert(delegate.selectedPhysicalUID.length == 0);
+
+    // An explicit switch back to Automatic also survives a process restart.
+    ChooseOutput(delegate, @"native-output");
+    ChooseOutput(delegate, @"");
+    NSArray *history = [testDefaults stringArrayForKey:@"recentPhysicalDeviceUIDs"];
+    delegate = LaunchWithOutputs(@[@"native-output"], @"native-output");
+    delegate.mockOutputUIDs = @[@"native-output", @"other-native-output"];
+    delegate.mockPhysicalDefaultUID = @"other-native-output";
+    [delegate defaultDevicesDidChange];
+    assert(delegate.selectedPhysicalUID.length == 0);
+    assert([delegate.physicalOutputUID isEqualToString:@"other-native-output"]);
+    assert([history isEqual:[testDefaults stringArrayForKey:@"recentPhysicalDeviceUIDs"]]);
+}
+
 static void TestNewlyConnectedOutputs(void) {
     [testDefaults removeObjectForKey:@"recentPhysicalDeviceUIDs"];
-    [testDefaults setObject:@"" forKey:@"physicalDeviceUID"];
+    [testDefaults setObject:@"native-output" forKey:@"physicalDeviceUID"];
     SVCRetryTestDelegate *delegate = LaunchWithOutputs(@[@"native-output"], @"native-output");
     // A new fixed-volume output should acquire the helper, even when macOS
     // keeps the same native default and emits only a device-list notification.
@@ -586,8 +630,8 @@ static void TestNewlyConnectedOutputs(void) {
     assert(delegate.launchGeneration == generation && delegate.scheduled.count == 1);
     [delegate runNextScheduled];
     assert([delegate.launchedPhysicalUID isEqualToString:@"fixed-output"]);
-    [delegate consumeForwarderLine:@"Forwarder ready."];
-    [delegate consumeForwarderLine:@"Forwarding is active."];
+    [delegate consumeForwarderLine:@"{\"event\":\"ready\"}"];
+    [delegate consumeForwarderLine:@"{\"event\":\"active\"}"];
     assert(delegate.forwarderReady && delegate.mockPhysicalDefaultUID == nil);
 
     // Sound Volume still owns the default when a native device is attached.
@@ -695,8 +739,8 @@ static void TestForwarderReportsDisconnectBeforeDeviceList(void) {
         [testDefaults setObject:preferred forKey:@"physicalDeviceUID"];
         [testDefaults setObject:@[preferred, previousChoice] forKey:@"recentPhysicalDeviceUIDs"];
         SVCRetryTestDelegate *delegate = LaunchWithOutputs(@[preferred, previousChoice, systemFallback], preferred);
-        [delegate consumeForwarderLine:@"Forwarder ready."];
-        [delegate consumeForwarderLine:@"Forwarding is active."];
+        [delegate consumeForwarderLine:@"{\"event\":\"ready\"}"];
+        [delegate consumeForwarderLine:@"{\"event\":\"active\"}"];
         assert(delegate.appState == SVCAppStateForwarding && delegate.launches == 1);
 
         delegate.mockPhysicalDefaultUID = systemFallback;
@@ -704,7 +748,7 @@ static void TestForwarderReportsDisconnectBeforeDeviceList(void) {
         if (exitFirst.boolValue) {
             [delegate forwarderDidTerminateWithStatus:0 reason:NSTaskTerminationReasonExit generation:generation];
         } else {
-            [delegate consumeForwarderLine:@"Sound Volume is no longer selected; stopping physical IO."];
+            [delegate consumeForwarderLine:@"{\"event\":\"deselected\"}"];
         }
         assert([delegate.selectedPhysicalUID isEqualToString:preferred]);
         delegate.mockOutputUIDs = @[previousChoice, systemFallback];
@@ -782,8 +826,8 @@ static void TestNativeAndFixedTransitions(void) {
             assert(delegate.launches == 1);
             assert([delegate.launchedPhysicalUID isEqualToString:@"fixed-output"]);
             if (stage == 1) {
-                [delegate consumeForwarderLine:@"Forwarder ready."];
-                [delegate consumeForwarderLine:@"Forwarding is active."];
+                [delegate consumeForwarderLine:@"{\"event\":\"ready\"}"];
+                [delegate consumeForwarderLine:@"{\"event\":\"active\"}"];
                 activeTask = [SVCStoppingTestTask new];
                 activeTask.active = YES;
                 delegate.forwarderTask = activeTask;
@@ -813,6 +857,22 @@ static void TestNativeAndFixedTransitions(void) {
         assert(delegate.appState == SVCAppStateStarting);
         assert(delegate.scheduled.count == 1);
     }
+}
+
+static void TestChannelVolumeSupport(void) {
+    static const SVCVolumeSupport capabilities[] = {
+        SVCVolumeSupportFixed, SVCVolumeSupportNative,
+        SVCVolumeSupportUnknown, SVCVolumeSupportNative,
+    };
+    SVCVolumeSupport (^probe)(AudioObjectPropertyElement) = ^(AudioObjectPropertyElement element) {
+        assert(element >= 1 && element <= 4);
+        return capabilities[element - 1];
+    };
+    assert(SVCChannelVolumeSupport(4, (UInt32[]){1, 3}, probe) == SVCVolumeSupportUnknown);
+    assert(SVCChannelVolumeSupport(4, (UInt32[]){3, 1}, probe) == SVCVolumeSupportUnknown);
+    assert(SVCChannelVolumeSupport(4, NULL, probe) == SVCVolumeSupportUnknown);
+    assert(SVCChannelVolumeSupport(4, (UInt32[]){2, 4}, probe) == SVCVolumeSupportNative);
+    assert(SVCChannelVolumeSupport(2, NULL, probe) == SVCVolumeSupportFixed);
 }
 
 static void TestUnknownVolumeSupport(void) {
@@ -861,7 +921,7 @@ static void TestCapabilityChangeBeforeReadiness(void) {
     for (NSNumber *support in @[@(SVCVolumeSupportNative), @(SVCVolumeSupportUnknown)]) {
         SVCRetryTestDelegate *delegate = StartPhysicalFixture(NO);
         delegate.mockVolumeSupport = @{@"first-output": support};
-        [delegate consumeForwarderData:[@"Forwarder ready.\nForwarding is active.\n"
+        [delegate consumeForwarderData:[@"{\"event\":\"ready\"}\n{\"event\":\"active\"}\n"
             dataUsingEncoding:NSUTF8StringEncoding]];
         assert(!delegate.forwarderReady);
         assert(delegate.selections == 0 && delegate.scheduled.count == 0);
@@ -968,23 +1028,24 @@ int main(void) {
         delegate.lineBuffer = [NSMutableData data];
         delegate.routeSucceeds = YES;
         delegate.appState = SVCAppStateStarting;
-        [delegate consumeForwarderLine:@"Physical output: Test (test-output)"];
+        [delegate consumeForwarderLine:@"Physical output: failed: mismatch: (test-output)"];
+        assert(delegate.errorDetail.length == 0);
         assert(delegate.selections == 0);
-        [delegate consumeForwarderLine:@"Forwarder ready."];
+        [delegate consumeForwarderLine:@"{\"event\":\"ready\"}"];
         assert(delegate.selections == 1);
-        [delegate consumeForwarderLine:@"Forwarding is active."];
+        [delegate consumeForwarderLine:@"{\"event\":\"active\"}"];
         assert(delegate.appState == SVCAppStateForwarding);
 
         // A fresh launch can fail to select the virtual output.
         delegate.forwarderReady = NO;
         delegate.appState = SVCAppStateStarting;
         delegate.routeSucceeds = NO;
-        [delegate consumeForwarderData:[@"Forwarder ready.\nForwarding is active.\n"
+        [delegate consumeForwarderData:[@"{\"event\":\"ready\"}\n{\"event\":\"active\"}\n"
             dataUsingEncoding:NSUTF8StringEncoding]];
         assert(delegate.appState == SVCAppStateError);
         assert(delegate.restorations == 1 && delegate.stops == 1);
         assert(delegate.lineBuffer.length == 0);
-        [delegate consumeForwarderLine:@"Forwarder ready."];
+        [delegate consumeForwarderLine:@"{\"event\":\"ready\"}"];
         assert(delegate.selections == 2); // An obsolete acknowledgement cannot select the route.
 
         // The delegate never messages sender; avoid starting NSApplication.
@@ -1004,9 +1065,11 @@ int main(void) {
         TestSourceChangeFailureBoundaries();
         TestNativeLaunchAndSelection();
         TestNativeAndFixedTransitions();
+        TestChannelVolumeSupport();
         TestUnknownVolumeSupport();
         TestCapabilityChangeBeforeReadiness();
         TestRememberedOutputPriority();
+        TestAutomaticFollowsSystemDefault();
         TestNewlyConnectedOutputs();
         TestReconnectAfterAllOutputsDisappear();
         TestConnectionNotificationOrdering();

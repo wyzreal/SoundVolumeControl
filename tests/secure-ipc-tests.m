@@ -132,6 +132,9 @@ int main(int argc, char **argv) {
         Check(Run(reader, @[readerName, requirements[0], @"timeout"]) == 0,
               "two startup resets share the missing-writer deadline and cancel pending grant");
         usleep(150000);
+        Check(Run(reader, @[readerName, requirements[0], @"cancel"]) == 0,
+              "cancellation releases a stalled reader before the startup deadline");
+        usleep(150000);
         NSTask *delayedReader = Start(reader, @[readerName, requirements[0], @"read"], nil);
         // Exceeds the old five-second production deadline, as in cold boot logs.
         usleep(6000000);

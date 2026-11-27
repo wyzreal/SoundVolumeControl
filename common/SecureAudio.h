@@ -3,6 +3,7 @@
 #include "SharedAudio.h"
 #include <CoreFoundation/CoreFoundation.h>
 #include <mach/mach.h>
+#include <signal.h>
 
 #define SVC_BROKER_WRITER "org.soundvolumecontrol.broker.writer"
 #define SVC_BROKER_READER "org.soundvolumecontrol.broker.reader"
@@ -27,6 +28,9 @@ void SVCWriterRelease(void);
 typedef struct SVCReaderConnection SVCReaderConnection;
 SVCReaderConnection *SVCReaderOpen(const char *service, const char *requirement,
                                   bool privileged, unsigned timeoutSeconds);
+SVCReaderConnection *SVCReaderOpenCancellable(const char *service, const char *requirement,
+                                             bool privileged, unsigned timeoutSeconds,
+                                             const volatile sig_atomic_t *stop);
 const SVCSharedAudio *SVCReaderAudio(SVCReaderConnection *reader);
 bool SVCReaderIsAlive(SVCReaderConnection *reader);
 void SVCReaderClose(SVCReaderConnection *reader);

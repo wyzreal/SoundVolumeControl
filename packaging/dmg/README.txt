@@ -1,4 +1,4 @@
-SoundVolumeControl 0.9.2 (build 24)
+SoundVolumeControl 0.9.3 (build 25)
 ==================================
 
 INSTALL MANUALLY

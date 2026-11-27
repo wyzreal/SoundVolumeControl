@@ -53,6 +53,11 @@ void SVCGainProcessorInit(SVCGainProcessor *processor,
     processor->rampTarget = gain;
     processor->rampFramesRemaining = 0;
     processor->rampLengthFrames = rampFrames;
+    atomic_init(&processor->stereoChannels, (UInt64)1 << 32);
+}
+
+void SVCGainProcessorSetStereoChannels(SVCGainProcessor *processor, UInt32 left, UInt32 right) {
+    atomic_store_explicit(&processor->stereoChannels, (UInt64)right << 32 | left, memory_order_release);
 }
 
 void SVCGainProcessorSetTarget(SVCGainProcessor *processor, Float32 targetGain) {
@@ -143,6 +148,9 @@ void SVCGainProcessorProcess(SVCGainProcessor *processor,
         input, inputChannels, kSVCMaximumMappedChannels
     );
     UInt32 maximumFrames = MaximumOutputFrames(output);
+    UInt64 stereoChannels = atomic_load_explicit(&processor->stereoChannels, memory_order_acquire);
+    UInt32 leftChannel = (UInt32)stereoChannels;
+    UInt32 rightChannel = (UInt32)(stereoChannels >> 32);
 
     for (UInt32 bufferIndex = 0;
          bufferIndex < output->mNumberBuffers;
@@ -175,16 +183,28 @@ void SVCGainProcessorProcess(SVCGainProcessor *processor,
             Float32 *outputSamples = buffer->mData;
             for (UInt32 channel = 0; channel < outputChannels; ++channel) {
                 UInt32 globalChannel = outputChannelBase + channel;
-                if (globalChannel >= inputChannelCount) {
+                UInt32 sourceIndex = globalChannel;
+                if (inputChannelCount == 2) {
+                    if (globalChannel == leftChannel) sourceIndex = 0;
+                    else if (globalChannel == rightChannel) sourceIndex = 1;
+                    else continue;
+                }
+                if (sourceIndex >= inputChannelCount) {
                     continue;
                 }
-                SVCInputChannel source = inputChannels[globalChannel];
+                SVCInputChannel source = inputChannels[sourceIndex];
                 if (frame >= source.frameCount) {
                     continue;
                 }
                 Float32 sample = source.samples[
                     frame * source.channelCount + source.channelIndex
                 ];
+                if (inputChannelCount == 2 && leftChannel == rightChannel) {
+                    SVCInputChannel right = inputChannels[1];
+                    if (frame < right.frameCount) {
+                        sample = 0.5f * sample + 0.5f * right.samples[frame * right.channelCount + right.channelIndex];
+                    }
+                }
                 outputSamples[frame * outputChannels + channel] = sample * gain;
             }
             outputChannelBase += outputChannels;

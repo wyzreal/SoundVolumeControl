@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.3 — 2026-11-27
+
+- Monitor physical output rate and stream-format changes during playback, route stereo to the preferred channels, and downmix stereo for mono outputs.
+- Keep Automatic selected across device arrivals and restarts. Wait when a required volume-control query fails.
+- Cancel pending helper startups promptly when switching outputs and use structured helper status messages.
+- Restore virtual volume and mute across driver reloads. Suspend physical I/O during confirmed inactivity and use cubic interpolation for clock correction.
+
 ## 0.9.2 — 2026-11-26
 
 - Check published stable versions for the newest compatible installer.

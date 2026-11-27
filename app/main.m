@@ -5,6 +5,7 @@
 #import "UpdateChecker.h"
 #include "SoundVolumeControlIDs.h"
 #include "../common/StartupTiming.h"
+#include "../common/ForwarderStatus.h"
 
 #include <stdbool.h>
 #include <sysexits.h>
@@ -165,6 +166,21 @@ static SVCVolumeSupport SVCVolumeSupportAtElement(
     return support;
 }
 
+// Both sides of the preferred stereo pair must be writable. Without a pair,
+// examine every output channel. A failed probe leaves the capability unknown.
+static SVCVolumeSupport SVCChannelVolumeSupport(
+    NSInteger channels, const UInt32 *stereo,
+    SVCVolumeSupport (^readElement)(AudioObjectPropertyElement)
+) {
+    SVCVolumeSupport result = SVCVolumeSupportNative;
+    for (NSInteger i = 0; i < (stereo != NULL ? 2 : channels); ++i) {
+        SVCVolumeSupport support = readElement(stereo != NULL ? stereo[i] : (UInt32)(i + 1));
+        if (support == SVCVolumeSupportUnknown) return support;
+        if (support == SVCVolumeSupportFixed) result = support;
+    }
+    return result;
+}
+
 static SVCVolumeSupport SVCOutputVolumeSupport(AudioDeviceID device) {
     NSInteger channels = SVCPhysicalOutputChannels(device);
     if (channels <= 0) return SVCVolumeSupportUnknown;
@@ -184,18 +200,11 @@ static SVCVolumeSupport SVCOutputVolumeSupport(AudioDeviceID device) {
         && size == sizeof(stereo) && stereo[0] > 0 && stereo[1] > 0
         && stereo[0] <= channels && stereo[1] <= channels && stereo[0] != stereo[1];
 
-    // A main control or controls for both sides of stereo can cover playback.
-    // With no preferred pair, require volume controls for the whole output.
-    SVCVolumeSupport channelSupport = SVCVolumeSupportNative;
-    for (NSInteger i = 0; i < (hasStereoPair ? 2 : channels); ++i) {
-        UInt32 element = hasStereoPair ? stereo[i] : (UInt32)(i + 1);
-        SVCVolumeSupport support = SVCVolumeSupportAtElement(device, element);
-        if (support == SVCVolumeSupportFixed) {
-            channelSupport = support;
-            break;
+    SVCVolumeSupport channelSupport = SVCChannelVolumeSupport(
+        channels, hasStereoPair ? stereo : NULL, ^SVCVolumeSupport(AudioObjectPropertyElement element) {
+            return SVCVolumeSupportAtElement(device, element);
         }
-        if (support == SVCVolumeSupportUnknown) channelSupport = support;
-    }
+    );
     if (channelSupport == SVCVolumeSupportNative) return channelSupport;
     UInt32 alive = 0;
     if (main == SVCVolumeSupportUnknown || channelSupport == SVCVolumeSupportUnknown
@@ -219,7 +228,6 @@ static SVCVolumeSupport SVCOutputVolumeSupport(AudioDeviceID device) {
 @property(nonatomic, strong) NSMenuItem *outputMenuItem;
 @property(nonatomic, strong) NSTask *forwarderTask;
 @property(nonatomic, strong) NSTask *stoppingForwarderTask;
-@property(nonatomic, strong) NSPipe *forwarderPipe;
 @property(nonatomic, strong) NSMutableData *lineBuffer;
 @property(nonatomic, copy) NSString *physicalOutputUID;
 @property(nonatomic, copy) NSArray<NSString *> *availableOutputUIDs;
@@ -618,7 +626,8 @@ static OSStatus SVCDefaultDeviceChanged(
 
     // HAL may report the default and device list in either order. Reconcile
     // both before treating a new physical default as a choice in Sound settings.
-    if (previous != nil && ![previous isEqualToArray:connected]) {
+    BOOL automatic = self.selectedPhysicalUID.length == 0;
+    if (!automatic && previous != nil && ![previous isEqualToArray:connected]) {
         NSMutableArray<NSString *> *added = [connected mutableCopy];
         [added removeObjectsInArray:previous];
         if (added.count > 0) {
@@ -670,7 +679,7 @@ static OSStatus SVCDefaultDeviceChanged(
         return;
     }
     if (connected != nil && ![connected containsObject:uid]) return;
-    [self rememberPhysicalUID:uid];
+    if (!automatic) [self rememberPhysicalUID:uid];
     self.physicalOutputUID = nil;
     [self restartForwarderForDefaultChange:YES];
 }
@@ -1100,12 +1109,10 @@ static OSStatus SVCDefaultDeviceChanged(
 
     NSTask *task = [[NSTask alloc] init];
     task.executableURL = helperURL;
-    task.arguments = @[@"--physical-uid", physicalUID];
+    task.arguments = @[@SVC_STATUS_OPTION, @"--physical-uid", physicalUID];
     NSPipe *pipe = [NSPipe pipe];
     task.standardOutput = pipe;
-    task.standardError = pipe;
     self.forwarderTask = task;
-    self.forwarderPipe = pipe;
     [self.lineBuffer setLength:0];
     self.errorDetail = nil;
     self.startupRetryPending = NO;
@@ -1114,37 +1121,32 @@ static OSStatus SVCDefaultDeviceChanged(
 
     NSUInteger generation = ++self.launchGeneration;
     __weak SVCAppDelegate *weakSelf = self;
-    pipe.fileHandleForReading.readabilityHandler = ^(NSFileHandle *handle) {
-        NSData *data = handle.availableData;
-        if (data.length == 0) {
-            handle.readabilityHandler = nil;
-            return;
-        }
-        dispatch_async(dispatch_get_main_queue(), ^{
-            SVCAppDelegate *strongSelf = weakSelf;
-            if (strongSelf != nil && generation == strongSelf.launchGeneration) {
-                [strongSelf consumeForwarderData:data];
-            }
-        });
-    };
-    task.terminationHandler = ^(NSTask *terminatedTask) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            SVCAppDelegate *strongSelf = weakSelf;
-            [strongSelf forwarderDidTerminateWithStatus:terminatedTask.terminationStatus
-                                                reason:terminatedTask.terminationReason
-                                            generation:generation];
-        });
-    };
-
     NSError *error = nil;
     if (![task launchAndReturnError:&error]) {
-        pipe.fileHandleForReading.readabilityHandler = nil;
         self.forwarderTask = nil;
-        self.forwarderPipe = nil;
         self.errorDetail = error.localizedDescription;
         self.appState = SVCAppStateError;
         return NO;
     }
+    // Deliver final diagnostics before handling exit, even if the child exits
+    // immediately after writing them. Generation checks discard superseded tasks.
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        for (;;) {
+            @autoreleasepool {
+                NSData *data = pipe.fileHandleForReading.availableData;
+                if (data.length == 0) break;
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    SVCAppDelegate *delegate = weakSelf;
+                    if (generation == delegate.launchGeneration) [delegate consumeForwarderData:data];
+                });
+            }
+        }
+        [task waitUntilExit];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [weakSelf forwarderDidTerminateWithStatus:task.terminationStatus
+                                              reason:task.terminationReason generation:generation];
+        });
+    });
     [self scheduleAfterSeconds:SVC_APP_STARTUP_SECONDS action:^{
         SVCAppDelegate *strongSelf = weakSelf;
         [strongSelf forwarderStartupTimedOutForGeneration:generation];
@@ -1227,9 +1229,7 @@ static OSStatus SVCDefaultDeviceChanged(
     if (generation != self.launchGeneration) return;
     // Invalidate queued readiness messages and the watchdog while HAL settles.
     ++self.launchGeneration;
-    self.forwarderPipe.fileHandleForReading.readabilityHandler = nil;
     self.forwarderTask = nil;
-    self.forwarderPipe = nil;
     if (self.quitting) return;
     [self reconcileRouteForForwarderEvent:^{
         [self handleForwarderExitWithStatus:status reason:reason];
@@ -1317,20 +1317,22 @@ static OSStatus SVCDefaultDeviceChanged(
 }
 
 - (void)consumeForwarderLine:(NSString *)line {
-    if ([line isEqualToString:@"Forwarder ready."]) {
+    NSData *data = [line dataUsingEncoding:NSUTF8StringEncoding];
+    id record = data == nil ? nil : [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
+    if (![record isKindOfClass:NSDictionary.class]) return;
+    NSString *event = record[@"event"];
+    if (![event isKindOfClass:NSString.class]) return;
+    if ([event isEqualToString:SVC_STATUS_READY]) {
         if (!self.quitting && !self.forwarderReady && self.appState == SVCAppStateStarting) {
             [self reconcileRouteForForwarderEvent:^{ [self handleForwarderReady]; }];
         }
-    } else if (self.forwarderReady && [line isEqualToString:@"Forwarding is active."]) {
+    } else if (self.forwarderReady && [event isEqualToString:SVC_STATUS_ACTIVE]) {
         self.startupRetryDelay = 0;
         self.appState = SVCAppStateForwarding;
-    } else if ([line containsString:@"no longer selected"]) {
+    } else if ([event isEqualToString:SVC_STATUS_DESELECTED]) {
         [self reconcileRouteForForwarderEvent:nil];
-    } else if ([line containsString:@"failed:"]
-               || [line hasPrefix:@"No eligible"]
-               || [line containsString:@"is not installed"]
-               || [line containsString:@"mismatch:"]) {
-        self.errorDetail = line;
+    } else if ([event isEqualToString:SVC_STATUS_ERROR] && [record[@"detail"] isKindOfClass:NSString.class]) {
+        self.errorDetail = record[@"detail"];
         // The exit status decides whether a startup error is transient. Keep
         // startup state until then so device notifications cannot interrupt a
         // pending retry merely because the physical output is still selected.
@@ -1346,10 +1348,8 @@ static OSStatus SVCDefaultDeviceChanged(
     self.startupRetryDelay = 0;
     self.startupRetryPending = NO;
     self.forwarderReady = NO;
-    self.forwarderPipe.fileHandleForReading.readabilityHandler = nil;
     NSTask *task = self.forwarderTask;
     self.forwarderTask = nil;
-    self.forwarderPipe = nil;
     if (task.running) {
         self.stoppingForwarderTask = task;
         [task terminate];

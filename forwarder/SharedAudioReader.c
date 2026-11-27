@@ -46,6 +46,36 @@ static float ClampCorrection(double correction) {
     return (float)correction;
 }
 
+// Four-point cubic interpolation retains more high-frequency detail as the
+// read cursor moves between samples. Integer positions need just one ring read.
+static bool ReadStereoAt(const SVCSharedAudio *audio, uint64_t start,
+                         double position, float output[2]) {
+    uint64_t frame = (uint64_t)position;
+    float t = (float)(position - (double)frame);
+    float a[2], b[2], c[2], d[2];
+    if (!SVCSharedAudioLoadFrame(audio, frame, b)) return false;
+    if (t == 0) {
+        memcpy(output, b, sizeof(b));
+        return true;
+    }
+    if (!SVCSharedAudioLoadFrame(audio, frame + 1, c)
+        || !SVCSharedAudioLoadFrame(audio, frame + 2, d)) return false;
+    if (frame == start) {
+        // Extend the first slope without reading a frame from the previous stream.
+        for (size_t i = 0; i < 2; ++i) a[i] = 2 * b[i] - c[i];
+    } else if (!SVCSharedAudioLoadFrame(audio, frame - 1, a)) {
+        return false;
+    }
+    for (size_t i = 0; i < 2; ++i) {
+        float slope = 0.5f * (c[i] - a[i]);
+        float nextSlope = 0.5f * (d[i] - b[i]);
+        float delta = c[i] - b[i];
+        output[i] = b[i] + t * (slope + t * ((3 * delta - 2 * slope - nextSlope)
+                                       + t * (slope + nextSlope - 2 * delta)));
+    }
+    return true;
+}
+
 uint32_t SVCSharedAudioReaderRead(SVCSharedAudioReader *reader,
                                   float *stereoOutput,
                                   uint32_t outputFrameCount) {
@@ -103,9 +133,9 @@ uint32_t SVCSharedAudioReaderRead(SVCSharedAudioReader *reader,
         / (double)reader->targetLatencyFrames;
     double playbackRatio = 1.0
         + (double)ClampCorrection(normalizedError * 0.01);
-    uint64_t required = (uint64_t)ceil(
-        (double)outputFrameCount * playbackRatio
-    ) + 2;
+    double initialFraction = reader->readFrame - (double)integerReadFrame;
+    uint64_t required = (uint64_t)(initialFraction
+        + (outputFrameCount - 1) * playbackRatio) + 3;
     if (available < required) {
         // Keep our position while the writer is stalled. Re-synchronizing to
         // writeFrame - latency here would replay the tail indefinitely.
@@ -117,25 +147,12 @@ uint32_t SVCSharedAudioReaderRead(SVCSharedAudioReader *reader,
     for (uint32_t outputFrame = 0;
          outputFrame < outputFrameCount;
          ++outputFrame) {
-        uint64_t sourceFrame = (uint64_t)reader->readFrame;
-        double fraction = reader->readFrame - (double)sourceFrame;
-        float firstStereo[2];
-        float secondStereo[2];
-        if (!SVCSharedAudioLoadFrame(audio, sourceFrame, firstStereo)
-            || !SVCSharedAudioLoadFrame(audio, sourceFrame + 1, secondStereo)) {
+        if (!ReadStereoAt(audio, streamStart, reader->readFrame,
+                          stereoOutput + (size_t)outputFrame * kSVCSharedAudioChannelCount)) {
             reader->synchronized = false;
             ++reader->underrunCount;
             WriteSilence(stereoOutput, outputFrameCount);
             return 0;
-        }
-        for (uint32_t channel = 0;
-             channel < kSVCSharedAudioChannelCount;
-             ++channel) {
-            float first = firstStereo[channel];
-            float second = secondStereo[channel];
-            stereoOutput[
-                outputFrame * kSVCSharedAudioChannelCount + channel
-            ] = first + (second - first) * (float)fraction;
         }
         reader->readFrame += playbackRatio;
     }

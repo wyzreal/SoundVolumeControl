@@ -1,4 +1,6 @@
 #include "AudioProcessor.h"
+#include "PhysicalOutput.h"
+#include "OutputActivity.h"
 
 #include <assert.h>
 #include <math.h>
@@ -99,7 +101,42 @@ static void TestMissingInputProducesSilence(void) {
     }
 }
 
+static void TestPhysicalFormatAndChannelMap(void) {
+    AudioStreamBasicDescription format = {
+        .mFormatID = kAudioFormatLinearPCM, .mSampleRate = 48000,
+        .mFormatFlags = kAudioFormatFlagsNativeFloatPacked, .mFramesPerPacket = 1,
+        .mBytesPerPacket = 16, .mBytesPerFrame = 16, .mBitsPerChannel = 32,
+        .mChannelsPerFrame = 4
+    };
+    assert(SVCPhysicalFormatSupported(&format, 48000));
+    assert(!SVCPhysicalFormatSupported(&format, 44100));
+    format.mFormatFlags = kAudioFormatFlagIsSignedInteger;
+    assert(!SVCPhysicalFormatSupported(&format, 48000));
+    Float32 stereo[] = {0.25f, 0.75f}, rendered[4];
+    AudioBufferList input = {1, {{2, sizeof(stereo), stereo}}};
+    AudioBufferList output = {1, {{4, sizeof(rendered), rendered}}};
+    SVCGainProcessor processor;
+    SVCGainProcessorInit(&processor, 1, 48000, 0);
+    SVCGainProcessorSetStereoChannels(&processor, 3, 2);
+    SVCGainProcessorProcess(&processor, &input, &output);
+    assert(rendered[0] == 0 && rendered[1] == 0 && rendered[2] == 0.75f && rendered[3] == 0.25f);
+    SVCGainProcessorSetStereoChannels(&processor, 0, 0);
+    SVCGainProcessorProcess(&processor, &input, &output);
+    assert(rendered[0] == 0.5f && rendered[1] == 0 && rendered[2] == 0 && rendered[3] == 0);
+}
+
+static void TestIdleAndWake(void) {
+    uint64_t idle = 0;
+    assert(SVCPhysicalIOWanted(true, false, false, 1, &idle));
+    assert(!SVCPhysicalIOWanted(true, false, false, 2000000001, &idle));
+    assert(SVCPhysicalIOWanted(true, true, false, 2000000002, &idle) && idle == 0);
+    assert(SVCPhysicalIOWanted(true, false, true, 2000000003, &idle) && idle == 0);
+    assert(SVCPhysicalIOWanted(false, false, false, 2000000004, &idle) && idle == 0);
+}
+
 int main(void) {
+    TestIdleAndWake();
+    TestPhysicalFormatAndChannelMap();
     TestInterleavedRamp();
     TestInterleavedToPlanarAndClamp();
     TestPlanarToInterleaved();

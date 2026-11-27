@@ -2,6 +2,9 @@
 #import <Foundation/Foundation.h>
 
 #include "AudioProcessor.h"
+#include "PhysicalOutput.h"
+#include "OutputActivity.h"
+#include "ForwarderStatus.h"
 #include "SharedAudio.h"
 #include "SecureAudio.h"
 #include "StartupTiming.h"
@@ -13,6 +16,7 @@
 #include <fcntl.h>
 #include <math.h>
 #include <signal.h>
+#include <stdarg.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -41,7 +45,12 @@ typedef struct {
     bool volumeListenerInstalled;
     bool muteListenerInstalled;
     bool defaultListenerInstalled;
+    bool activityListenerInstalled;
+    bool physicalIORunning;
+    uint64_t idleSince;
     SVCGainProcessor gainProcessor;
+    SVCPhysicalOutput physicalOutput;
+    _Atomic(UInt32) validatedGeneration;
     bool diagnostics;
     _Atomic(UInt64) callbackCount;
     _Atomic(UInt64) forwardedFrameCount;
@@ -56,10 +65,71 @@ typedef struct {
 
 static volatile sig_atomic_t gShouldStop = 0;
 static dispatch_semaphore_t gStateSemaphore;
+static _Atomic(UInt32) gPhysicalGeneration = 1;
+static bool gStatusJSON;
+
+static void EmitStatus(NSString *event, NSString *detail) {
+    if (!gStatusJSON) return;
+    NSDictionary *record = detail == nil ? @{@"event": event}
+                                         : @{@"event": event, @"detail": detail};
+    NSData *json = [NSJSONSerialization dataWithJSONObject:record options:0 error:NULL];
+    if (json != nil) {
+        fwrite(json.bytes, 1, json.length, stdout);
+        fputc('\n', stdout);
+        fflush(stdout);
+    }
+}
+
+static void ReportHelperError(const char *format, ...) __attribute__((format(printf, 1, 2)));
+static void ReportHelperError(const char *format, ...) {
+    char *message = NULL;
+    va_list args;
+    va_start(args, format);
+    int length = vasprintf(&message, format, args);
+    va_end(args);
+    const char *text = length >= 0 ? message : "Audio helper failed.";
+    fprintf(stderr, "%s\n", text);
+    NSString *detail = [NSString stringWithUTF8String:text];
+    EmitStatus(SVC_STATUS_ERROR, detail != nil ? detail : @"Audio helper failed.");
+    if (length >= 0) free(message);
+}
 
 static void HandleSignal(int signalNumber) {
     (void)signalNumber;
     gShouldStop = 1;
+}
+
+static OSStatus PhysicalConfigurationChanged(AudioObjectID object, UInt32 count,
+                                             const AudioObjectPropertyAddress addresses[],
+                                             void *clientData) {
+    (void)object;
+    (void)count;
+    (void)addresses;
+    (void)clientData;
+    atomic_fetch_add_explicit(&gPhysicalGeneration, 1, memory_order_release);
+    dispatch_semaphore_signal(gStateSemaphore);
+    return noErr;
+}
+
+static bool PhysicalOutputIsCurrent(SVCForwarderContext *context) {
+    return atomic_load_explicit(&context->validatedGeneration, memory_order_acquire)
+        == atomic_load_explicit(&gPhysicalGeneration, memory_order_acquire);
+}
+
+static bool ValidatePhysicalOutput(SVCForwarderContext *context) {
+    UInt32 generation = atomic_load_explicit(&gPhysicalGeneration, memory_order_acquire);
+    if (generation == atomic_load_explicit(&context->validatedGeneration, memory_order_relaxed)) {
+        return true;
+    }
+    UInt32 stereo[2];
+    const char *error = SVCPhysicalOutputRead(&context->physicalOutput, stereo);
+    if (error != NULL) {
+        ReportHelperError("%s", error);
+        return false;
+    }
+    SVCGainProcessorSetStereoChannels(&context->gainProcessor, stereo[0], stereo[1]);
+    atomic_store_explicit(&context->validatedGeneration, generation, memory_order_release);
+    return true;
 }
 
 static OSStatus DefaultOutputChanged(AudioObjectID objectID,
@@ -102,7 +172,7 @@ static void FourCC(OSStatus status, char result[5]) {
 static void ReportStatus(const char *operation, OSStatus status) {
     char code[5];
     FourCC(status, code);
-    fprintf(stderr, "%s failed: %d ('%s')\n", operation, status, code);
+    ReportHelperError("%s failed: %d ('%s')", operation, status, code);
 }
 
 // A full-duplex device must not start its input streams for this output-only app.
@@ -399,7 +469,8 @@ static UInt32 MaximumFrames(const AudioBufferList *list) {
 static SVCReaderConnection *MapDriverAudio(void) {
     char *requirement = SVCCopyBrokerRequirement(CFSTR(SVC_FORWARDER_BUNDLE_ID));
     if (requirement == NULL) { errno = EACCES; return NULL; }
-    SVCReaderConnection *reader = SVCReaderOpen(SVC_BROKER_READER, requirement, true, SVC_BUFFER_STARTUP_SECONDS);
+    SVCReaderConnection *reader = SVCReaderOpenCancellable(
+        SVC_BROKER_READER, requirement, true, SVC_BUFFER_STARTUP_SECONDS, &gShouldStop);
     free(requirement);
     return reader;
 }
@@ -441,6 +512,9 @@ static OSStatus ForwardIO(AudioDeviceID inDevice,
     SVCForwarderContext *context = inClientData;
     atomic_fetch_add_explicit(&context->callbackCount, 1, memory_order_relaxed);
 
+    // HAL supplies cleared output buffers. Leave them untouched until the
+    // control thread has validated the formats and published the channel map.
+    if (!PhysicalOutputIsCurrent(context)) return noErr;
     UInt32 frames = MaximumFrames(outOutputData);
     if (frames > context->scratchCapacityFrames) {
         frames = context->scratchCapacityFrames;
@@ -464,7 +538,9 @@ static OSStatus ForwardIO(AudioDeviceID inDevice,
         atomic_fetch_add_explicit(&context->nonSilentCallbackCount,
                                   1, memory_order_relaxed);
     }
-    SVCGainProcessorProcess(&context->gainProcessor, &input, outOutputData);
+    if (PhysicalOutputIsCurrent(context)) {
+        SVCGainProcessorProcess(&context->gainProcessor, &input, outOutputData);
+    }
     return noErr;
 }
 
@@ -521,6 +597,31 @@ static OSStatus WakeVirtualIO(AudioDeviceID inDevice,
     return noErr;
 }
 
+static const AudioObjectPropertyAddress virtualActivity = {
+    kAudioDevicePropertyDeviceIsRunningSomewhere, kAudioObjectPropertyScopeGlobal,
+    kAudioObjectPropertyElementMain
+};
+
+// Only the control thread starts or stops the physical IOProc. If HAL cannot
+// report activity reliably, keep I/O ready for the next client.
+static bool UpdateOutputActivity(SVCForwarderContext *context) {
+    if (!context->activityListenerInstalled) return true;
+    UInt32 running = 0;
+    bool known = ReadUInt32(context->virtualDevice, virtualActivity, &running);
+    bool writerActive = atomic_load_explicit(&context->sharedAudio->writerActive, memory_order_acquire) != 0;
+    bool desired = SVCPhysicalIOWanted(known, running != 0, writerActive,
+                                       clock_gettime_nsec_np(CLOCK_MONOTONIC), &context->idleSince);
+    if (desired == context->physicalIORunning) return true;
+    OSStatus status = desired ? AudioDeviceStart(context->physicalDevice, context->physicalIOProcID)
+                              : AudioDeviceStop(context->physicalDevice, context->physicalIOProcID);
+    if (status != noErr) {
+        ReportStatus(desired ? "resuming physical output" : "suspending physical output", status);
+        return false;
+    }
+    context->physicalIORunning = desired;
+    return true;
+}
+
 static void Cleanup(SVCForwarderContext *context) {
     AudioObjectPropertyAddress volume = Address(
         kAudioDevicePropertyVolumeScalar, kAudioObjectPropertyScopeOutput
@@ -528,13 +629,18 @@ static void Cleanup(SVCForwarderContext *context) {
     AudioObjectPropertyAddress mute = Address(
         kAudioDevicePropertyMute, kAudioObjectPropertyScopeOutput
     );
+    if (context->activityListenerInstalled) {
+        (void)AudioObjectRemovePropertyListener(context->virtualDevice, &virtualActivity,
+                                                 DefaultOutputChanged, context);
+    }
     if (context->physicalIOProcID != NULL) {
-        (void)AudioDeviceStop(context->physicalDevice,
-                              context->physicalIOProcID);
+        if (context->physicalIORunning)
+            (void)AudioDeviceStop(context->physicalDevice, context->physicalIOProcID);
         (void)AudioDeviceDestroyIOProcID(context->physicalDevice,
                                          context->physicalIOProcID);
         context->physicalIOProcID = NULL;
     }
+    SVCPhysicalOutputClose(&context->physicalOutput);
     if (context->virtualIOProcID != NULL) {
         (void)AudioDeviceStop(context->virtualDevice,
                               context->virtualIOProcID);
@@ -581,7 +687,7 @@ static void PrintUsage(const char *program) {
     fprintf(stderr,
             "usage: %s [--physical-uid UID] [--run-seconds N] "
             "[--diagnose] [--always-active] [--test-tone] "
-            "[--remove-shared-audio]\n",
+            "[--remove-shared-audio] [" SVC_STATUS_OPTION "]\n",
             program);
 }
 
@@ -606,6 +712,8 @@ int main(int argc, const char *argv[]) {
                     return 64;
                 }
                 runSeconds = (UInt32)value;
+            } else if (strcmp(argv[index], SVC_STATUS_OPTION) == 0) {
+                gStatusJSON = true;
             } else if (strcmp(argv[index], "--diagnose") == 0) {
                 diagnostics = true;
             } else if (strcmp(argv[index], "--always-active") == 0) {
@@ -633,6 +741,7 @@ int main(int argc, const char *argv[]) {
             return EXIT_SUCCESS;
         }
 
+        FILE *progress = gStatusJSON ? stderr : stdout;
         SVCForwarderContext context = {
             .virtualDevice = kAudioObjectUnknown,
             .physicalDevice = kAudioObjectUnknown,
@@ -643,14 +752,14 @@ int main(int argc, const char *argv[]) {
         atomic_init(&context.callbackCount, 0);
         atomic_init(&context.forwardedFrameCount, 0);
         atomic_init(&context.nonSilentCallbackCount, 0);
+        atomic_init(&context.validatedGeneration, 0);
         gStateSemaphore = dispatch_semaphore_create(0);
         signal(SIGINT, HandleSignal);
         signal(SIGTERM, HandleSignal);
 
         context.virtualDevice = FindDeviceByUID(CFSTR(SVC_DEVICE_UID));
         if (context.virtualDevice == kAudioObjectUnknown) {
-            fputs("Sound Volume is not installed or registered with CoreAudio.\n",
-                  stderr);
+            ReportHelperError("Sound Volume is not installed or registered with CoreAudio.");
             return EXIT_FAILURE;
         }
 
@@ -671,7 +780,7 @@ int main(int argc, const char *argv[]) {
         context.physicalDevice = SelectPhysicalOutput(context.virtualDevice,
                                                       explicitPhysicalUID);
         if (context.physicalDevice == kAudioObjectUnknown) {
-            fputs("No eligible physical output is available.\n", stderr);
+            ReportHelperError("No eligible physical output is available.");
             Cleanup(&context);
             return EXIT_FAILURE;
         }
@@ -686,7 +795,7 @@ int main(int argc, const char *argv[]) {
             Address(kAudioObjectPropertyName, kAudioObjectPropertyScopeGlobal)
         );
         if (physicalUIDRef == NULL) {
-            fputs("The selected physical output has no readable UID.\n", stderr);
+            ReportHelperError("The selected physical output has no readable UID.");
             if (physicalNameRef != NULL) {
                 CFRelease(physicalNameRef);
             }
@@ -696,7 +805,7 @@ int main(int argc, const char *argv[]) {
         NSString *physicalName = physicalNameRef == NULL
             ? @"Unnamed output" : (__bridge NSString *)physicalNameRef;
         PersistPhysicalUID(physicalUIDRef);
-        printf("Physical output: %s (%s)\n",
+        fprintf(progress, "Physical output: %s (%s)\n",
                physicalName.UTF8String, physicalUID.UTF8String);
 
         Float64 virtualRate = 0;
@@ -710,9 +819,8 @@ int main(int argc, const char *argv[]) {
                                   kAudioObjectPropertyScopeGlobal),
                           &physicalRate);
         if (virtualRate != physicalRate || virtualRate <= 0) {
-            fprintf(stderr,
-                    "Sample-rate mismatch: Sound Volume %.0f Hz, physical %.0f Hz.\n",
-                    virtualRate, physicalRate);
+            ReportHelperError("Sample-rate mismatch: Sound Volume %.0f Hz, physical %.0f Hz.",
+                              virtualRate, physicalRate);
             CFRelease(physicalUIDRef);
             if (physicalNameRef != NULL) {
                 CFRelease(physicalNameRef);
@@ -722,6 +830,12 @@ int main(int argc, const char *argv[]) {
 
         os_log_info(OS_LOG_DEFAULT, "SoundVolumeControl: waiting for authenticated driver buffer");
         context.secureReader = MapDriverAudio();
+        if (gShouldStop) {
+            Cleanup(&context);
+            CFRelease(physicalUIDRef);
+            if (physicalNameRef != NULL) CFRelease(physicalNameRef);
+            return EXIT_SUCCESS;
+        }
         context.sharedAudio = context.secureReader == NULL ? NULL : SVCReaderAudio(context.secureReader);
         if (context.sharedAudio == NULL) {
             int error = errno;
@@ -732,7 +846,7 @@ int main(int argc, const char *argv[]) {
                 : error == ECONNREFUSED ? "The audio service is unavailable. The menu app will retry automatically."
                 : error == ECONNRESET ? "The audio service repeatedly disconnected during startup. Check the installed components."
                 : "Invalid audio buffer response. Install the matching components together.";
-            fprintf(stderr, "Driver buffer failed: %s (%d). %s\n", strerror(error), error, detail);
+            ReportHelperError("Driver buffer failed: %s (%d). %s", strerror(error), error, detail);
             os_log_error(OS_LOG_DEFAULT, "SoundVolumeControl: driver buffer startup failed with error %{public}d", error);
             Cleanup(&context);
             CFRelease(physicalUIDRef);
@@ -752,7 +866,7 @@ int main(int argc, const char *argv[]) {
             kSVCSharedAudioChannelCount * sizeof(Float32)
         );
         if (context.stereoScratch == NULL) {
-            fputs("Unable to allocate the forwarding buffer.\n", stderr);
+            ReportHelperError("Unable to allocate the forwarding buffer.");
             Cleanup(&context);
             CFRelease(physicalUIDRef);
             if (physicalNameRef != NULL) {
@@ -774,13 +888,23 @@ int main(int argc, const char *argv[]) {
         SVCSharedAudioReaderInit(&context.sharedAudioReader,
                                  context.sharedAudio,
                                  targetLatencyFrames);
-        printf("Driver buffer: output capture, %u-frame target latency\n",
+        fprintf(progress, "Driver buffer: output capture, %u-frame target latency\n",
                context.sharedAudioReader.targetLatencyFrames);
 
         Float32 initialGain = SoftwareGain(context.virtualDevice);
         SVCGainProcessorInit(&context.gainProcessor, initialGain,
                              virtualRate, 5.0);
-        printf("Initial software gain: %.6f\n", initialGain);
+        fprintf(progress, "Initial software gain: %.6f\n", initialGain);
+
+        const char *configError = SVCPhysicalOutputObserve(&context.physicalOutput,
+            context.physicalDevice, virtualRate, PhysicalConfigurationChanged);
+        if (configError != NULL || !ValidatePhysicalOutput(&context)) {
+            if (configError != NULL) ReportHelperError("%s", configError);
+            Cleanup(&context);
+            CFRelease(physicalUIDRef);
+            if (physicalNameRef != NULL) CFRelease(physicalNameRef);
+            return EXIT_FAILURE;
+        }
 
         AudioObjectPropertyAddress volume = Address(
             kAudioDevicePropertyVolumeScalar, kAudioObjectPropertyScopeOutput
@@ -827,8 +951,12 @@ int main(int argc, const char *argv[]) {
                                                &context.virtualIOProcID);
         }
         if (status == noErr) {
-            status = AudioDeviceStart(context.physicalDevice,
-                                      context.physicalIOProcID);
+            if (!alwaysActive) {
+                context.activityListenerInstalled = AudioObjectAddPropertyListener(context.virtualDevice,
+                    &virtualActivity, DefaultOutputChanged, &context) == noErr;
+            }
+            status = AudioDeviceStart(context.physicalDevice, context.physicalIOProcID);
+            context.physicalIORunning = status == noErr;
         }
         if (status == noErr && testTone) {
             atomic_store_explicit(&wakeContext.toneEnabled, true,
@@ -855,33 +983,56 @@ int main(int argc, const char *argv[]) {
             return EXIT_FAILURE;
         }
 
+        if (!ValidatePhysicalOutput(&context)) {
+            Cleanup(&context);
+            CFRelease(physicalUIDRef);
+            if (physicalNameRef != NULL) CFRelease(physicalNameRef);
+            return EXIT_FAILURE;
+        }
+        bool outputFailed = false;
         time_t endTime = runSeconds == 0 ? 0 : time(NULL) + (time_t)runSeconds;
-        puts("Forwarder ready.");
-        fflush(stdout);
+        fputs("Forwarder ready.\n", progress);
+        fflush(progress);
+        EmitStatus(SVC_STATUS_READY, nil);
         if (!alwaysActive && DefaultOutput() != context.virtualDevice) {
-            puts("Waiting for Sound Volume to become the macOS output.");
-            fflush(stdout);
+            fputs("Waiting for Sound Volume to become the macOS output.\n", progress);
+            fflush(progress);
             while (!gShouldStop && (endTime == 0 || time(NULL) < endTime)
                    && SVCReaderIsAlive(context.secureReader)
                    && DefaultOutput() != context.virtualDevice) {
+                if (!ValidatePhysicalOutput(&context)) {
+                    outputFailed = true;
+                    break;
+                }
                 (void)dispatch_semaphore_wait(
                     gStateSemaphore,
                     dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC)
                 );
             }
         }
-        if (!gShouldStop && (endTime == 0 || time(NULL) < endTime)
+        if (!outputFailed && !gShouldStop && (endTime == 0 || time(NULL) < endTime)
             && SVCReaderIsAlive(context.secureReader)) {
-            puts("Forwarding is active.");
+            fputs("Forwarding is active.\n", progress);
+            EmitStatus(SVC_STATUS_ACTIVE, nil);
         }
-        fflush(stdout);
-        while (!gShouldStop && (endTime == 0 || time(NULL) < endTime)) {
+        fflush(progress);
+        while (!outputFailed && !gShouldStop && (endTime == 0 || time(NULL) < endTime)) {
+            if (!ValidatePhysicalOutput(&context)) {
+                outputFailed = true;
+                break;
+            }
             if (!SVCReaderIsAlive(context.secureReader)) {
-                fputs("Audio broker failed: connection revoked or stopped.\n", stderr);
+                ReportHelperError("Audio broker failed: connection revoked or stopped.");
+                outputFailed = true;
                 break;
             }
             if (!alwaysActive && DefaultOutput() != context.virtualDevice) {
-                puts("Sound Volume is no longer selected; stopping physical IO.");
+                fputs("Sound Volume is no longer selected; stopping physical IO.\n", progress);
+                EmitStatus(SVC_STATUS_DESELECTED, nil);
+                break;
+            }
+            if (!UpdateOutputActivity(&context)) {
+                outputFailed = true;
                 break;
             }
             (void)dispatch_semaphore_wait(
@@ -891,7 +1042,7 @@ int main(int argc, const char *argv[]) {
         }
 
         if (diagnostics && context.sharedAudio != NULL) {
-            printf("Driver callbacks: %u ProcessOutput, %u WriteMix; write frame %llu\n",
+            fprintf(progress, "Driver callbacks: %u ProcessOutput, %u WriteMix; write frame %llu\n",
                    atomic_load(&context.sharedAudio->processOutputCount),
                    atomic_load(&context.sharedAudio->writeMixCount),
                    (unsigned long long)atomic_load(&context.sharedAudio->writeFrame));
@@ -903,21 +1054,21 @@ int main(int argc, const char *argv[]) {
                                              memory_order_relaxed);
         UInt64 nonSilent = atomic_load_explicit(&context.nonSilentCallbackCount,
                                                 memory_order_relaxed);
-        printf("Stopped: %llu callbacks, %llu forwarded frames",
+        fprintf(progress, "Stopped: %llu callbacks, %llu forwarded frames",
                callbacks, frames);
         if (diagnostics) {
-            printf(", %llu non-silent callbacks, %llu underruns, "
+            fprintf(progress, ", %llu non-silent callbacks, %llu underruns, "
                    "%llu resynchronizations",
                    nonSilent,
                    context.sharedAudioReader.underrunCount,
                    context.sharedAudioReader.resyncCount);
         }
-        putchar('\n');
+        fputc('\n', progress);
 
         CFRelease(physicalUIDRef);
         if (physicalNameRef != NULL) {
             CFRelease(physicalNameRef);
         }
-        return EXIT_SUCCESS;
+        return outputFailed ? EXIT_FAILURE : EXIT_SUCCESS;
     }
 }

@@ -1,6 +1,6 @@
 # SoundVolumeControl user guide
 
-Version 0.9.2 (build 24) for Apple Silicon and macOS 14+.
+Version 0.9.3 (build 25) for Apple Silicon and macOS 14+.
 
 Audio uses authenticated XPC and anonymous read-only memory. Installed playback
 and hardware reliability still need [validation](validation.md).
@@ -14,8 +14,8 @@ It stays in the menu bar and has no separate window or custom volume slider.
 ## Install from the DMG
 
 1. If an older copy is running, use its **Quit SoundVolumeControl** command.
-2. Download `SoundVolumeControl-0.9.2.dmg` and `SHA256SUMS.txt`, then open the
-   DMG. [0.9.2 GitHub release](https://github.com/wyzreal/SoundVolumeControl/releases/tag/v0.9.2)
+2. Download `SoundVolumeControl-0.9.3.dmg` and `SHA256SUMS.txt`, then open the
+   DMG. [0.9.3 GitHub release](https://github.com/wyzreal/SoundVolumeControl/releases/tag/v0.9.3)
 3. Double-click **Install SoundVolumeControl.pkg**.
 4. Follow Installer and enter an administrator password.
 5. The installer adds `SoundVolumeControl.app` to `/Applications`, installs the
@@ -39,15 +39,16 @@ devices, the app automatically starts software volume control after the
 helper is ready. Use the normal macOS volume keys, mute key, and Control
 Center slider in both cases.
 
-Choose a destination under **Output Device** in the speaker menu. The
-app remembers choices made there and in macOS Sound settings.
-When you reopen the app, it selects your last choice if connected. Otherwise
-it tries your other remembered outputs, most recent first, then uses the
-current macOS physical output.
+By default, **Output Device → Automatic** follows the physical output selected
+in macOS. Connecting a device changes the destination only when macOS selects
+it. Automatic stays selected across output changes and app restarts.
 
-Connecting or reconnecting a physical output switches audio to that device
-automatically. Choose **Automatic** to follow the current macOS output again
-until you connect another output or choose a device yourself.
+Choose a specific device in the speaker menu to have the app remember output
+choices made there and in macOS Sound settings. In this mode, connecting or
+reconnecting an output switches audio to it. When the app reopens, it uses
+the most recently chosen connected output, then the current physical default
+if none of the remembered outputs are connected. Choose **Automatic** at any
+time to resume following macOS.
 
 The app requests **Start at Login** by default on first launch. macOS may
 require approval. You can change the setting from the speaker menu or System
@@ -88,11 +89,13 @@ on the source and physical speaker settings. Changes use a 5 ms smoothing ramp.
 
 ### Current compatibility limits
 
-The virtual stream is 48 kHz stereo. The physical device must report the same
-positive nominal rate; otherwise startup reports a sample-rate mismatch and
-does not enable the route. Small clock-drift correction is not general sample-rate
-conversion. Device reconnect, sleep/wake, real user switching, and long-run
-performance still need testing. The app reevaluates the route on output changes.
+Software forwarding requires 48 kHz and a physical output whose Core Audio
+client format is 32-bit floating-point PCM. The helper monitors the rate,
+stream formats, and preferred stereo channels during playback. If the output
+becomes incompatible, the app reports an error and attempts to restore the
+physical route. After correcting the format in Audio MIDI Setup, select the
+destination again. The virtual device saves its volume and mute across restarts.
+
 Startup timeouts retry automatically. Other helper errors are recorded in the
 system log.
 

@@ -1,8 +1,8 @@
 # Menu-bar app
 
-- App: 0.9.2 (build 24), native arm64
-- Embedded helper: 0.9.2 (build 24)
-- Driver: 0.9.2 (build 24)
+- App: 0.9.3 (build 25), native arm64
+- Embedded helper: 0.9.3 (build 25)
+- Driver: 0.9.3 (build 25)
 - Small authenticated XPC broker, with no UI or audio processing
 - Minimum macOS: 14.0
 
@@ -32,7 +32,7 @@ also offers **Output Device**, **Start at Login**, About, and Quit.
 ## Update checks
 
 **Check for Updates…** checks for a newer published stable GitHub release with
-a compatible installer DMG and reports the result. The 0.9.2 updater
+a compatible installer DMG and reports the result. The 0.9.3 updater
 compares published stable versions numerically and offers the highest one
 with a matching installer. The 0.8.9 through 0.9.1 builds use the release
 GitHub marks as Latest.
@@ -82,17 +82,18 @@ read back and verified. Quit reports an error if restoration fails.
 
 ## Output selection
 
-The app remembers physical outputs by device UID. Selecting an
-output in the menu or in macOS Sound settings gives it first priority at the
-next launch. If it is disconnected, the app tries previously selected
-outputs in order of most recent selection, then uses the current macOS
-physical output. Choosing **Automatic** follows the macOS physical output
-until another output connects or a specific device is selected.
+**Automatic** follows the macOS physical output and stays selected across
+device arrivals, changes in Sound settings, and app restarts. While Sound
+Volume owns the default, the app keeps its connected physical destination.
 
-Connecting or reconnecting a physical output selects it immediately. When
-several outputs appear together, the app prefers the macOS default if it is
-among them, then the most recently chosen of those outputs, then the first
-one in menu order.
+Selecting a specific output in the menu enables remembered-device routing.
+Selections in the menu or macOS Sound settings take priority at the next
+launch. If the last choice is disconnected, the app tries other remembered
+outputs in order of most recent selection, then the current macOS physical
+output. Connecting or reconnecting an output in this mode selects it
+immediately. For simultaneous arrivals, the app prefers the macOS default
+among the new outputs, then the most recently chosen of them, then the first
+in menu order. Choose **Automatic** to resume following macOS.
 
 Duplicate notifications during startup leave the current attempt in place. A
 different physical default replaces the pending attempt. Helper route-loss

@@ -111,10 +111,10 @@ $(FORWARDER_APP): $(FORWARDER_BINARY) $(FORWARDER_PLIST)
 	/usr/bin/codesign --force --options runtime --sign - "$@"
 	touch "$@"
 
-$(FORWARDER_BINARY): forwarder/main.m common/StartupTiming.h forwarder/AudioProcessor.c forwarder/AudioProcessor.h forwarder/SharedAudioReader.c forwarder/SharedAudioReader.h driver/SoundVolumeControlIDs.h common/SharedAudio.h common/SecureAudio.h $(SECURE_MEMORY) $(SECURE_READER) common/VolumeCurve.h
+$(FORWARDER_BINARY): forwarder/main.m forwarder/PhysicalOutput.c forwarder/PhysicalOutput.h forwarder/OutputActivity.h common/ForwarderStatus.h common/StartupTiming.h forwarder/AudioProcessor.c forwarder/AudioProcessor.h forwarder/SharedAudioReader.c forwarder/SharedAudioReader.h driver/SoundVolumeControlIDs.h common/SharedAudio.h common/SecureAudio.h $(SECURE_MEMORY) $(SECURE_READER) common/VolumeCurve.h
 	mkdir -p $(dir $@)
 	$(CC) $(FORWARDER_CFLAGS) -fblocks -fobjc-arc -Icommon -Idriver -Iforwarder \
-		forwarder/main.m forwarder/AudioProcessor.c forwarder/SharedAudioReader.c $(SECURE_MEMORY) $(SECURE_READER) \
+		forwarder/main.m forwarder/PhysicalOutput.c forwarder/AudioProcessor.c forwarder/SharedAudioReader.c $(SECURE_MEMORY) $(SECURE_READER) \
 		-framework CoreAudio -framework CoreFoundation \
 		-framework Foundation -o $@
 
@@ -129,7 +129,7 @@ $(MENU_APP): $(MENU_BINARY) $(MENU_HELPER_APP) $(MENU_PLIST) $(MENU_ICON)
 	/usr/bin/codesign --force --sign - "$@"
 	touch "$@"
 
-$(MENU_BINARY): app/main.m common/StartupTiming.h driver/SoundVolumeControlIDs.h $(UPDATE_SOURCES) $(UPDATE_HEADERS)
+$(MENU_BINARY): app/main.m common/ForwarderStatus.h common/StartupTiming.h driver/SoundVolumeControlIDs.h $(UPDATE_SOURCES) $(UPDATE_HEADERS)
 	mkdir -p $(dir $@)
 	$(CC) $(FORWARDER_CFLAGS) -fobjc-arc -fblocks -Idriver app/main.m $(UPDATE_SOURCES) \
 		-framework AppKit -framework CoreAudio -framework Foundation \
@@ -184,9 +184,9 @@ $(CONTRACT_TEST): tests/driver-contract-tests.c driver/SoundVolumeControl.c driv
 driver-test: $(CONTRACT_TEST)
 	$(CONTRACT_TEST)
 
-$(PROCESSOR_TEST): tests/audio-processor-tests.c forwarder/AudioProcessor.c forwarder/AudioProcessor.h
+$(PROCESSOR_TEST): tests/audio-processor-tests.c forwarder/PhysicalOutput.c forwarder/PhysicalOutput.h forwarder/OutputActivity.h forwarder/AudioProcessor.c forwarder/AudioProcessor.h
 	mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -Iforwarder tests/audio-processor-tests.c forwarder/AudioProcessor.c -o $@
+	$(CC) $(CFLAGS) -Iforwarder tests/audio-processor-tests.c forwarder/AudioProcessor.c forwarder/PhysicalOutput.c -framework CoreAudio -o $@
 
 processor-test: $(PROCESSOR_TEST)
 	$(PROCESSOR_TEST)
@@ -215,7 +215,7 @@ privacy-audit: $(DRIVER_BUNDLE) $(FORWARDER_APP) $(MENU_APP)
 	! /usr/bin/strings $(BROKER) | /usr/bin/grep -q test-revoke
 
 .PHONY: ipc-test app-test
-$(APP_TEST): tests/app-lifecycle-tests.m common/StartupTiming.h app/main.m driver/SoundVolumeControlIDs.h $(UPDATE_SOURCES) $(UPDATE_HEADERS)
+$(APP_TEST): tests/app-lifecycle-tests.m common/ForwarderStatus.h common/StartupTiming.h app/main.m driver/SoundVolumeControlIDs.h $(UPDATE_SOURCES) $(UPDATE_HEADERS)
 	mkdir -p $(BUILD_DIR)
 	$(CC) $(FORWARDER_CFLAGS) -fobjc-arc -fblocks -Idriver $< $(UPDATE_SOURCES) \
 		-framework AppKit -framework CoreAudio -framework Foundation \

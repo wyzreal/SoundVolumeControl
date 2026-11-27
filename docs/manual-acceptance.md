@@ -1,4 +1,4 @@
-# Manual acceptance — 0.9.2 candidate
+# Manual acceptance — 0.9.3 candidate
 
 ## Historical verification
 
@@ -56,7 +56,7 @@ to install software, switch outputs, or generate test sounds without a request.
 - Physical device/model/connection:
 - Normal output and system-sounds output before installation:
 - Physical nominal sample rate (software routing requires 48 kHz):
-- App/helper/driver versions (expected 0.9.2/build 24):
+- App/helper/driver versions (expected 0.9.3/build 25):
 - DMG checksum/source (see [validation coverage](validation.md)):
 
 Keep System Settings > Sound > Output available for recovery. Use ordinary
@@ -107,7 +107,13 @@ acceptance gate even if unit tests passed.
   no continued old-session audio access, and expected recovery behavior.
 - [ ] Test Start at Login across reboot and verify that turning it off is respected.
 - [ ] Test a fixed-volume output at an unsupported sample rate. Confirm the app
-  reports the mismatch and leaves a usable physical route.
+  reports the mismatch and leaves a usable physical route. Repeat while playing
+  at 48 kHz by switching to 44.1 or 96 kHz in Audio MIDI Setup.
+- [ ] Select a non-default stereo pair on a multichannel output and verify
+  left/right placement. Pause until the physical IOProc stops, then resume and
+  check the onset of playback.
+- [ ] Set a low volume and mute, reload the driver, and verify both controls
+  before playing audio.
 - [ ] With a known newer installer release or the automated test fixture,
   verify that an update appears in the menu and turns the dot yellow. With
   both an update and a routing error present, verify a red dot and both menu
@@ -141,5 +147,5 @@ Quit the menu app first; only one authenticated reader can connect. The helper
 must match the installed signature policy. No tone is generated in normal use.
 
 Record the final decision as PASS, FAIL, or NOT RUN and link a dated validation
-record. The 0.9.2 package is ad-hoc signed and hardware acceptance
+record. The 0.9.3 package is ad-hoc signed and hardware acceptance
 remains open.

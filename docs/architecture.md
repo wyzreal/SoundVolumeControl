@@ -1,6 +1,6 @@
 # Architecture: output-only audio with authenticated IPC
 
-Current architecture for 0.9.2. See [validation coverage](validation.md) for
+Current architecture for 0.9.3. See [validation coverage](validation.md) for
 installed checks and the remaining hardware acceptance work.
 
 ## Audio and control paths
@@ -10,7 +10,11 @@ stream, with zero input channels. It publishes final WriteMix samples to an
 anonymous 32,768-frame ring. ProcessOutput is diagnostic-only.
 
 The native helper maps the ring read-only, applies square-law gain with a
-5 ms ramp and bounded clock correction, then renders to the physical output.
+5 ms ramp and cubic interpolation for bounded clock correction, then renders
+to the preferred physical stereo pair. The helper checks the callback format
+before enabling output and on configuration changes. In normal routing it
+releases physical I/O after two seconds of confirmed virtual-device inactivity.
+A virtual-device activity notification wakes the control thread to resume I/O.
 It disables all input streams on its physical IOProc first. There is no virtual
 input, AVFoundation, ScreenCaptureKit, process tap, or recording API.
 

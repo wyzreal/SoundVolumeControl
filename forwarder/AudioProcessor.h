@@ -10,6 +10,7 @@ typedef struct {
     Float32 rampTarget;
     UInt32 rampFramesRemaining;
     UInt32 rampLengthFrames;
+    _Atomic(UInt64) stereoChannels;
 } SVCGainProcessor;
 
 void SVCGainProcessorInit(SVCGainProcessor *processor,
@@ -18,6 +19,9 @@ void SVCGainProcessorInit(SVCGainProcessor *processor,
                           Float64 rampMilliseconds);
 
 void SVCGainProcessorSetTarget(SVCGainProcessor *processor, Float32 targetGain);
+
+// Zero-based physical output positions. Equal positions downmix stereo input to mono.
+void SVCGainProcessorSetStereoChannels(SVCGainProcessor *processor, UInt32 left, UInt32 right);
 
 Float32 SVCGainProcessorGetTarget(const SVCGainProcessor *processor);
 

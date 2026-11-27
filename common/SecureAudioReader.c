@@ -31,7 +31,8 @@ static int ConnectionError(xpc_object_t event) {
 }
 
 static SVCReaderConnection *OpenOnce(const char *service, const char *requirement,
-                                    bool privileged, dispatch_time_t deadline) {
+                                    bool privileged, dispatch_time_t deadline,
+                                    const volatile sig_atomic_t *stop) {
     SVCReaderConnection *reader = calloc(1, sizeof(*reader));
     if (reader == NULL) return NULL;
     atomic_init(&reader->references, 1); // Owned by the connection finalizer.
@@ -92,9 +93,24 @@ static SVCReaderConnection *OpenOnce(const char *service, const char *requiremen
     });
     dispatch_release(queue);
     xpc_release(request);
-    long timeout = dispatch_semaphore_wait(reader->ready, deadline);
-    if (timeout != 0 || !atomic_load(&reader->alive)) {
-        int error = timeout != 0 ? ETIMEDOUT : atomic_load(&reader->error);
+    int error = 0;
+    for (;;) {
+        if (stop != NULL && *stop) { error = ECANCELED; break; }
+        // A signal handler only sets the flag. Check it during a pending grant
+        // without performing XPC or dispatch operations in the handler.
+        dispatch_time_t wake = deadline;
+        if (stop != NULL) {
+            dispatch_time_t poll = dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC);
+            if (poll < deadline) wake = poll;
+        }
+        if (dispatch_semaphore_wait(reader->ready, wake) == 0) {
+            if (stop != NULL && *stop) error = ECANCELED;
+            else if (!atomic_load(&reader->alive)) error = atomic_load(&reader->error);
+            break;
+        }
+        if (wake == deadline) { error = ETIMEDOUT; break; }
+    }
+    if (error != 0) {
         SVCReaderClose(reader);
         errno = error;
         return NULL;
@@ -104,6 +120,12 @@ static SVCReaderConnection *OpenOnce(const char *service, const char *requiremen
 
 SVCReaderConnection *SVCReaderOpen(const char *service, const char *requirement,
                                   bool privileged, unsigned timeoutSeconds) {
+    return SVCReaderOpenCancellable(service, requirement, privileged, timeoutSeconds, NULL);
+}
+
+SVCReaderConnection *SVCReaderOpenCancellable(const char *service, const char *requirement,
+                                             bool privileged, unsigned timeoutSeconds,
+                                             const volatile sig_atomic_t *stop) {
     dispatch_time_t deadline = dispatch_time(DISPATCH_TIME_NOW,
         (int64_t)timeoutSeconds * NSEC_PER_SEC);
     // Login/session rotation or a restarting broker can revoke a pending grant.
@@ -111,10 +133,12 @@ SVCReaderConnection *SVCReaderOpen(const char *service, const char *requirement,
     // Share one deadline, and cap retries because remote signature rejection can
     // also surface as ECONNRESET. Explicit denial and busy errors are final.
     for (unsigned attempt = 0; attempt < 3; ++attempt) {
-        SVCReaderConnection *reader = OpenOnce(service, requirement, privileged, deadline);
+        if (stop != NULL && *stop) { errno = ECANCELED; return NULL; }
+        SVCReaderConnection *reader = OpenOnce(service, requirement, privileged, deadline, stop);
         if (reader != NULL || errno != ECONNRESET || attempt == 2) return reader;
         struct timespec delay = { .tv_nsec = 100 * NSEC_PER_MSEC };
-        while (nanosleep(&delay, &delay) != 0 && errno == EINTR) {}
+        while (nanosleep(&delay, &delay) != 0 && errno == EINTR
+               && (stop == NULL || !*stop)) {}
     }
     return NULL;
 }

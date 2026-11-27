@@ -33,6 +33,7 @@ static _Atomic(UInt32) gRunningCount = 0;
 static _Atomic(UInt64) gTimestampAnchor = 0;
 static AudioServerPlugInHostRef gHost = NULL;
 static pthread_mutex_t gStateMutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t gStorageMutex = PTHREAD_MUTEX_INITIALIZER;
 static Float32 gVolumeScalar = 1.0f;
 static UInt32 gMute = 0;
 static UInt32 gOutputStreamActive = 1;
@@ -495,12 +496,63 @@ static ULONG STDMETHODCALLTYPE DriverRelease(void *inDriver) {
     return 1;
 }
 
+static void RestoreControls(AudioServerPlugInHostRef host) {
+    Float32 volume = 1.0f;
+    UInt32 mute = 0;
+    CFPropertyListRef stored = NULL;
+    if (host->CopyFromStorage != NULL) {
+        if (host->CopyFromStorage(host, CFSTR("MasterVolume"), &stored) == noErr
+            && stored != NULL && CFGetTypeID(stored) == CFNumberGetTypeID()) {
+            Float64 value = 0;
+            if (CFNumberGetValue(stored, kCFNumberFloat64Type, &value)
+                && isfinite(value) && value >= 0 && value <= 1)
+                volume = (Float32)value;
+        }
+        if (stored != NULL) CFRelease(stored);
+        stored = NULL;
+        if (host->CopyFromStorage(host, CFSTR("MasterMute"), &stored) == noErr
+            && stored != NULL && CFGetTypeID(stored) == CFBooleanGetTypeID())
+            mute = CFBooleanGetValue(stored);
+        if (stored != NULL) CFRelease(stored);
+    }
+    pthread_mutex_lock(&gStateMutex);
+    gVolumeScalar = volume;
+    gMute = mute;
+    pthread_mutex_unlock(&gStateMutex);
+}
+
+static void PersistControl(AudioObjectID control) {
+    if (gHost == NULL || gHost->WriteToStorage == NULL) return;
+    // Serialize snapshots and writes so an older setter cannot overwrite a
+    // newer value. Getters and audio I/O never wait for host storage.
+    pthread_mutex_lock(&gStorageMutex);
+    pthread_mutex_lock(&gStateMutex);
+    Float32 volume = gVolumeScalar;
+    UInt32 mute = gMute;
+    pthread_mutex_unlock(&gStateMutex);
+    OSStatus status;
+    if (control == kSVCObjectVolume) {
+        CFNumberRef value = CFNumberCreate(NULL, kCFNumberFloat32Type, &volume);
+        status = value == NULL ? kAudioHardwareUnspecifiedError
+            : gHost->WriteToStorage(gHost, CFSTR("MasterVolume"), value);
+        if (value != NULL) CFRelease(value);
+    } else {
+        status = gHost->WriteToStorage(gHost, CFSTR("MasterMute"),
+                                       mute ? kCFBooleanTrue : kCFBooleanFalse);
+    }
+    pthread_mutex_unlock(&gStorageMutex);
+    if (status != noErr)
+        os_log_error(OS_LOG_DEFAULT, "SoundVolumeControl could not persist control %{public}u: %{public}d",
+                     control, status);
+}
+
 static OSStatus DriverInitialize(AudioServerPlugInDriverRef inDriver,
                                  AudioServerPlugInHostRef inHost) {
     if (!IsDriver(inDriver) || inHost == NULL) {
         return kAudioHardwareIllegalOperationError;
     }
     gHost = inHost;
+    RestoreControls(inHost);
     mach_timebase_info_data_t timebase = {0};
     if (mach_timebase_info(&timebase) != KERN_SUCCESS || timebase.numer == 0) {
         return kAudioHardwareUnspecifiedError;
@@ -1320,6 +1372,7 @@ static OSStatus DriverSetPropertyData(
         Boolean changed = gVolumeScalar != value;
         gVolumeScalar = value;
         pthread_mutex_unlock(&gStateMutex);
+        PersistControl(inObjectID);
         if (changed) {
             AudioObjectPropertyAddress changedAddresses[] = {
                 Address(kAudioLevelControlPropertyScalarValue),
@@ -1340,6 +1393,7 @@ static OSStatus DriverSetPropertyData(
         Boolean changed = gMute != value;
         gMute = value;
         pthread_mutex_unlock(&gStateMutex);
+        PersistControl(inObjectID);
         if (changed) {
             AudioObjectPropertyAddress changedAddress =
                 Address(kAudioBooleanControlPropertyValue);

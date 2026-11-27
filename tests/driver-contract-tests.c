@@ -16,6 +16,7 @@ extern SVCSharedAudio *SVCDriverTestSharedAudio(void);
 static UInt32 gNotificationCount = 0;
 static AudioObjectID gLastNotifiedObject = kAudioObjectUnknown;
 static AudioObjectPropertyAddress gLastNotification = {0};
+static CFMutableDictionaryRef gStorage;
 
 static OSStatus HostPropertiesChanged(
     AudioServerPlugInHostRef host,
@@ -35,8 +36,8 @@ static OSStatus HostCopyFromStorage(AudioServerPlugInHostRef host,
                                     CFStringRef key,
                                     CFPropertyListRef *outData) {
     (void)host;
-    (void)key;
-    *outData = NULL;
+    CFPropertyListRef value = CFDictionaryGetValue(gStorage, key);
+    *outData = value == NULL ? NULL : CFRetain(value);
     return noErr;
 }
 
@@ -44,8 +45,7 @@ static OSStatus HostWriteToStorage(AudioServerPlugInHostRef host,
                                    CFStringRef key,
                                    CFPropertyListRef data) {
     (void)host;
-    (void)key;
-    (void)data;
+    CFDictionarySetValue(gStorage, key, data);
     return noErr;
 }
 
@@ -373,6 +373,34 @@ static void TestVolumeAndMute(AudioServerPlugInDriverRef driver) {
     assert(mute == 1);
 }
 
+static void AssertControls(AudioServerPlugInDriverRef driver, Float32 volume, UInt32 mute) {
+    Float32 actualVolume = -1;
+    UInt32 actualMute = 2;
+    UInt32 size = 0;
+    assert(GetData(driver, kSVCObjectVolume,
+                   MakeAddress(kAudioLevelControlPropertyScalarValue, kAudioObjectPropertyScopeGlobal),
+                   0, NULL, sizeof(actualVolume), &size, &actualVolume) == noErr);
+    assert(GetData(driver, kSVCObjectMute,
+                   MakeAddress(kAudioBooleanControlPropertyValue, kAudioObjectPropertyScopeGlobal),
+                   0, NULL, sizeof(actualMute), &size, &actualMute) == noErr);
+    assert(fabsf(actualVolume - volume) < 0.0001f && actualMute == mute);
+}
+
+static void TestStoredControls(AudioServerPlugInDriverRef driver) {
+    // Save the state written by TestVolumeAndMute, including its dB setter.
+    CFDictionaryRef saved = CFDictionaryCreateCopy(NULL, gStorage);
+    assert(saved != NULL);
+    CFDictionarySetValue(gStorage, CFSTR("MasterVolume"), CFSTR("invalid"));
+    CFDictionaryRemoveValue(gStorage, CFSTR("MasterMute"));
+    assert((*driver)->Initialize(driver, &gHost) == noErr);
+    AssertControls(driver, 1, 0);
+    CFRelease(gStorage);
+    gStorage = CFDictionaryCreateMutableCopy(NULL, 0, saved);
+    CFRelease(saved);
+    assert((*driver)->Initialize(driver, &gHost) == noErr);
+    AssertControls(driver, 0.0630957f, 1);
+}
+
 static void TestIO(AudioServerPlugInDriverRef driver) {
     Boolean willDo = false;
     Boolean inPlace = false;
@@ -497,15 +525,20 @@ int main(void) {
         NULL, kAudioServerPlugInTypeUUID
     );
     assert(driver != NULL);
+    gStorage = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks,
+                                         &kCFTypeDictionaryValueCallBacks);
+    assert(gStorage != NULL);
     assert((*driver)->Initialize(driver, &gHost) == noErr);
 
     TestFactoryAndTopology(driver);
     TestDeviceAndStream(driver);
     TestLegacyOutputSampleRate(driver);
     TestVolumeAndMute(driver);
+    TestStoredControls(driver);
     TestIO(driver);
     TestErrors(driver);
 
+    CFRelease(gStorage);
     puts("driver-contract-tests: PASS");
     return 0;
 }

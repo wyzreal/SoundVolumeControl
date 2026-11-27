@@ -9,7 +9,7 @@ outputs whose volume macOS can’t adjust directly. It lets you use your Mac’s
 volume keys, mute key, and Control Center with fixed-volume HDMI, DisplayPort,
 and USB-C monitor speakers.
 
-The app uses native macOS frameworks, and the v0.9.2 installer is a **2.1 MB download**.
+The app uses native macOS frameworks, and the v0.9.3 installer is a **2.1 MB download**.
 
 [Download the latest macOS installer and SHA-256 checksum](https://github.com/wyzreal/SoundVolumeControl/releases/latest)
 
@@ -57,7 +57,7 @@ make check
 make dmg
 ```
 
-The build writes the matching installer to `dist/SoundVolumeControl-0.9.2.dmg`.
+The build writes the matching installer to `dist/SoundVolumeControl-0.9.3.dmg`.
 
 ## How it works
 

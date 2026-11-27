@@ -103,6 +103,28 @@ static void TestStalledWriterNeverReplaysTail(void) {
     free(audio);
 }
 
+static void TestFractionalInterpolation(void) {
+    SVCSharedAudio *audio = NewSharedAudio();
+    SVCSharedAudioReader reader;
+    SVCSharedAudioReaderInit(&reader, audio, 512);
+    const float wave[] = {0, 1, 0, -1}; // 12 kHz at 48 kHz
+    for (uint64_t frame = 0; frame < 1024; ++frame) {
+        float pair[] = {wave[frame % 4], -wave[frame % 4]};
+        SVCSharedAudioStoreFrame(audio, frame, pair);
+    }
+    atomic_store(&audio->writeFrame, 1024);
+    reader.synchronized = true;
+    reader.readFrame = 512.5;
+    float output[2];
+    assert(SVCSharedAudioReaderRead(&reader, output, 1) == 1);
+    // The exact sinusoid is sqrt(0.5). Linear interpolation gives only 0.5.
+    assert(fabsf(output[0] - 0.625f) < 0.00001f && output[1] == -output[0]);
+    reader.readFrame = 513;
+    assert(SVCSharedAudioReaderRead(&reader, output, 1) == 1);
+    assert(output[0] == 1 && output[1] == -1);
+    free(audio);
+}
+
 static void TestMissingFramesAreNotOldRingContents(void) {
     SVCSharedAudio *audio = NewSharedAudio();
     SVCSharedAudioReader reader;
@@ -121,6 +143,7 @@ int main(void) {
     TestStreamRestartResynchronizes();
     TestRejectsOverwrittenReadPosition();
     TestStalledWriterNeverReplaysTail();
+    TestFractionalInterpolation();
     TestMissingFramesAreNotOldRingContents();
     puts("shared audio reader tests passed");
     return 0;
