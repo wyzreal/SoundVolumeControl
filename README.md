@@ -2,31 +2,31 @@
   <img src="app/Assets/AppIcon.png" width="144" alt="SoundVolumeControl icon">
 </p>
 
-# SoundVolumeControl
+# SoundVolumeControl — macOS volume control for external monitors
 
-Native macOS volume control for fixed-volume HDMI, DisplayPort, and USB-C audio.
-Use the normal volume keys, Control Center slider, mute, and volume HUD with a
-small menu-bar app.
+When macOS grays out the volume slider for an external monitor, SoundVolumeControl
+lets you use your Mac’s volume keys, mute key, and Control Center to adjust the
+monitor’s speakers. The menu bar app lowers the outgoing audio level in software
+for fixed-volume HDMI, DisplayPort, and USB-C displays.
 
-**0.9.2 (build 24)** is available on GitHub with its DMG and SHA-256 checksum.
-[GitHub release](https://github.com/wyzreal/SoundVolumeControl/releases/tag/v0.9.2)
+[Download the latest macOS installer and SHA-256 checksum](https://github.com/wyzreal/SoundVolumeControl/releases/latest)
 
-Requires Apple Silicon and macOS 14+. Software volume supports physical
-outputs running at 48 kHz stereo. Installed playback and hardware validation
-are pending for 1.0. [Manual acceptance checklist](docs/manual-acceptance.md)
+Requires **macOS 14 or later on Apple silicon**. The selected output must run
+at **48 kHz stereo** for software volume control. Installed playback and hardware
+validation are pending for 1.0. [Manual acceptance checklist](docs/manual-acceptance.md)
 
 ## Features
 
-- Native system volume and mute, with smoothed software attenuation.
+- Native macOS volume HUD and smooth volume changes.
 - Automatic background routing, output selection, and configurable Start at Login.
 - Menu-bar routing status and manual or automatic checks for stable GitHub releases.
 - Startup readiness checks and physical output restoration before Quit.
 - Output-only audio driver and authenticated, anonymous shared memory.
 - No microphone or system-recording APIs.
 
-## Install
+## Install on macOS
 
-Open `SoundVolumeControl-0.9.2.dmg` and run **Install SoundVolumeControl.pkg**.
+Open the downloaded DMG and run **Install SoundVolumeControl.pkg**.
 The installer requests administrator access, installs the matching app, driver,
 broker, and signature policy, briefly restarts Core Audio, and opens the app.
 The DMG contains ad-hoc-signed components. [Installation guide](docs/user-guide.md#install-from-the-dmg)
